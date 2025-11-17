@@ -19,15 +19,27 @@ import {
   isTransactionsReady
 } from './transactions-service.js';
 
+/**
+ * @typedef {Object} InternalTx
+ * @property {string} id
+ * @property {'income'|'expense'} type
+ * @property {number} amountCents       // céntimos
+ * @property {string} categoryId
+ * @property {string} date              // ISO YYYY-MM-DD
+ * @property {string} [note]
+ * @property {{freq: 'monthly'|'weekly', endsOn: (string|null)}|null} [recurring]
+ */
+
 
 // =============================
 // 2. Estado global y referencias DOM
 // =============================
 
+/** @type {{ month: string, txs: InternalTx[], chart: any }} */
 const state = {
   month: toMonthKey(new Date()),
-  txs: [],           // lista completa desde Firestore
-  chart: null        // instancia de Chart.js
+  txs: [],
+  chart: null
 };
 
 const el = {
@@ -50,6 +62,7 @@ const el = {
   form:         document.getElementById('txForm'),
   dlgTitle:     document.getElementById('dlgTitle'),
   btnDeleteTx:  document.getElementById('btnDeleteTx'), // si no existe será null, no pasa nada si usas ?.addEventListener
+  btnCancelTx:  document.getElementById('btnCancelTx'),
 
   // Campos del formulario
   inputAmount:      document.getElementById('amount'),
@@ -133,12 +146,13 @@ function getVisibleMonthTxs() {
   const first = new Date(y, m - 1, 1);
   const last  = new Date(y, m, 0);
 
-  return state.txs.filter(t => {
+  return state.txs.filter((/** @type {InternalTx} */ t) => {
     if (!t.date) return false;
     const d = new Date(t.date + 'T00:00:00');
     return d >= first && d <= last;
   });
 }
+
 
 
 // Construye la tarjeta HTML de un movimiento
@@ -166,11 +180,10 @@ function renderTxCard(tx) {
   const subDiv = document.createElement('div');
   subDiv.className = 'sub';
 
-  const d = typeof tx.date === 'string'
+    const d = tx.date
     ? new Date(tx.date + 'T00:00:00')
-    : (tx.date && typeof tx.date.toDate === 'function'
-      ? tx.date.toDate()
-      : new Date());
+    : new Date();
+
 
   // categoría + fecha en la línea pequeña
   subDiv.textContent = `${cat.name} • ${d.toLocaleDateString('es-ES')}`;
@@ -333,11 +346,8 @@ function openEditDialog(tx) {
   else el.radioExpense.checked = true;
 
   el.inputAmount.value = (tx.amountCents / 100).toString().replace('.', ',');
-  el.inputDate.value = typeof tx.date === 'string'
-    ? tx.date
-    : (tx.date && typeof tx.date.toDate === 'function'
-      ? tx.date.toDate().toISOString().slice(0, 10)
-      : todayISO());
+  el.inputDate.value = tx.date || todayISO();
+
 
   el.selectCategory.value = tx.categoryId || (tx.type === 'income' ? 'other_inc' : 'other_exp');
   el.inputNote.value = tx.note || '';
@@ -373,6 +383,10 @@ el.btnDeleteTx?.addEventListener('click', () => {
   if (!id) return;
   el.dlgTx.close();
   openDeleteDialog(id);
+});
+
+el.btnCancelTx?.addEventListener('click', () => {
+  el.dlgTx.close();
 });
 
 el.btnCancelDelete?.addEventListener('click', () => {

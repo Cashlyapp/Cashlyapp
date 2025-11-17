@@ -6,7 +6,16 @@ let _col = null;
 let _fs = null;          // módulo de firestore (collection, addDoc, etc.)
 let _unsubscribe = null; // para cancelar el onSnapshot si hiciera falta
 
-// Mapea un doc de Firestore a nuestro objeto interno
+/**
+ * @typedef {Object} InternalTx
+ * @property {string} id
+ * @property {'income'|'expense'} type
+ * @property {number} amountCents
+ * @property {string} categoryId
+ * @property {string} date
+ * @property {string} [note]
+ * @property {{freq: 'monthly'|'weekly', endsOn: (string|null)}|null} [recurring]
+ */
 function mapDocToTx(docSnap) {
   const data = docSnap.data() || {};
   const dateField = data.date;
