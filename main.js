@@ -12,6 +12,14 @@ import {
   CATEGORY_BY_ID
 } from './categories.js';
 
+import {
+  initTransactionsListener,
+  saveTransaction,
+  deleteTransaction,
+  isTransactionsReady
+} from './transactions-service.js';
+
+
 // =============================
 // 2. Estado global y referencias DOM
 // =============================
@@ -126,20 +134,12 @@ function getVisibleMonthTxs() {
   const last  = new Date(y, m, 0);
 
   return state.txs.filter(t => {
-    const v = t.date;
-    let d;
-    if (v && typeof v.toDate === 'function') {
-      d = v.toDate();
-    } else if (typeof v === 'string') {
-      d = new Date(v + 'T00:00:00');
-    } else if (v instanceof Date) {
-      d = v;
-    } else {
-      return false;
-    }
+    if (!t.date) return false;
+    const d = new Date(t.date + 'T00:00:00');
     return d >= first && d <= last;
   });
 }
+
 
 // Construye la tarjeta HTML de un movimiento
 function renderTxCard(tx) {
@@ -384,17 +384,19 @@ el.btnConfirmDelete?.addEventListener('click', async () => {
   el.dlgConfirmDelete.close();
   if (!id) return;
 
-  if (!window.__actions || !window.__actions.removeTx) {
+  if (!isTransactionsReady()) {
     alert('Firebase aún no está listo');
     return;
   }
 
   try {
-    await window.__actions.removeTx(id);
+    await deleteTransaction(id);
   } catch (e) {
+    console.error(e);
     alert('Error eliminando: ' + (e?.message || e));
   }
 });
+
 
 // Guardar movimiento
 el.form?.addEventListener('submit', async (e) => {
@@ -425,117 +427,42 @@ el.form?.addEventListener('submit', async (e) => {
     recurringEndsOn: raw.recurringEndsOn || ''
   };
 
-  if (!window.__actions || !window.__actions.saveTx) {
+  if (!isTransactionsReady()) {
     alert('Firebase aún no está listo. Espera un momento y reintenta.');
     return;
   }
 
   try {
     const editingId = el.dlgTx.dataset.editingId || null;
-    await window.__actions.saveTx(payload, editingId);
+    await saveTransaction(payload, editingId);
     el.dlgTx.close();
   } catch (e2) {
+    console.error(e2);
     alert('Error al guardar: ' + (e2?.message || e2));
   }
 });
+
 
 // =============================
 // 7. Integración con Firebase
 // =============================
 
 document.addEventListener('firebase-ready', () => {
-  const { db, user } = window.__firebase || {};
-  if (!db || !user) {
-    console.error('Firebase no inicializado');
-    return;
+  const { user } = window.__firebase || {};
+
+  if (user && el.authInfo) {
+    el.authInfo.textContent = `Conectado • ${user.email || user.uid.slice(0, 8)}`;
   }
 
-  el.authInfo.textContent = `Conectado • ${user.email || user.uid.slice(0, 8)}`;
-
-  import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
-    .then(({ 
-      collection, addDoc, serverTimestamp, onSnapshot,
-      query, orderBy, doc, deleteDoc, updateDoc 
-    }) => {
-      const col = collection(db, 'users', user.uid, 'transactions');
-
-      const q = query(
-        col,
-        orderBy('date', 'desc'),
-        orderBy('createdAt', 'desc')
-      );
-
-      onSnapshot(
-        q,
-        (snap) => {
-          state.txs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          refreshList();
-        },
-        (err) => {
-          console.error(err);
-          alert('Firestore error: ' + (err?.message || err));
-        }
-      );
-
-      // Servicio mínimo para crear/actualizar/borrar
-      async function saveTx(formData, editingId) {
-        const tx = {
-          type: formData.type,
-          amountCents: formData.amountCents,
-          categoryId: formData.category,
-          date: formData.date,
-          note: formData.note || '',
-          recurring: formData.recurringFreq
-            ? {
-                freq: formData.recurringFreq,
-                endsOn: formData.recurringEndsOn || null
-              }
-            : null,
-          createdAt: serverTimestamp()
-        };
-
-        if (editingId) {
-          await updateDoc(doc(db, 'users', user.uid, 'transactions', editingId), tx);
-        } else {
-          // principal
-          await addDoc(col, tx);
-
-          // Generar futuras si es recurrente (opcional, simple)
-          if (tx.recurring && tx.recurring.freq) {
-            const ends = tx.recurring.endsOn ? new Date(tx.recurring.endsOn) : null;
-            let d = new Date(tx.date);
-
-            while (true) {
-              d = new Date(d);
-              if (tx.recurring.freq === 'monthly') d.setMonth(d.getMonth() + 1);
-              else if (tx.recurring.freq === 'weekly') d.setDate(d.getDate() + 7);
-              else break;
-
-              if (ends && d > ends) break;
-
-              const future = {
-                ...tx,
-                date: d.toISOString().slice(0, 10),
-                recurring: null
-              };
-              await addDoc(col, future);
-            }
-          }
-        }
-      }
-
-      async function removeTx(id) {
-        await deleteDoc(doc(db, 'users', user.uid, 'transactions', id));
-      }
-
-      const TransactionsService = { saveTx, removeTx };
-      window.__actions = TransactionsService;
-    })
-    .catch((e) => {
-      console.error(e);
-      alert('Error cargando Firestore: ' + (e?.message || e));
-    });
+  initTransactionsListener((txList) => {
+    state.txs = txList;
+    refreshList();
+  }).catch(err => {
+    console.error(err);
+    alert('Error inicializando datos: ' + (err?.message || err));
+  });
 });
+
 
 
 // =============================
@@ -567,7 +494,7 @@ el.fileImport?.addEventListener('change', async (e) => {
       return;
     }
 
-    if (!window.__actions || !window.__actions.saveTx) {
+        if (!isTransactionsReady()) {
       alert('Firebase aún no está listo');
       return;
     }
@@ -576,7 +503,7 @@ el.fileImport?.addEventListener('change', async (e) => {
     for (const item of json) {
       if (!item.type || !item.amountCents || !item.date) continue;
       promises.push(
-        window.__actions.saveTx(
+        saveTransaction(
           {
             type: item.type === 'income' ? 'income' : 'expense',
             amountCents: item.amountCents,
@@ -592,6 +519,7 @@ el.fileImport?.addEventListener('change', async (e) => {
         )
       );
     }
+
 
     await Promise.all(promises);
     alert(`Importadas ${promises.length} transacciones`);
@@ -922,7 +850,7 @@ el.ocrFiles?.addEventListener('change', async (e) => {
 
 // Importar candidatos seleccionados
 el.ocrImport?.addEventListener('click', async () => {
-  if (!window.__actions || !window.__actions.saveTx) {
+  if (!isTransactionsReady()) {
     alert('Firebase aún no está listo');
     return;
   }
@@ -953,7 +881,7 @@ el.ocrImport?.addEventListener('click', async () => {
   }
 
   try {
-    const promises = toImport.map(t => window.__actions.saveTx(t, null));
+    const promises = toImport.map(t => saveTransaction(t, null));
     await Promise.all(promises);
     el.dlgOcr.close();
     el.ocrPreview.innerHTML = '';
@@ -963,3 +891,4 @@ el.ocrImport?.addEventListener('click', async () => {
     alert('Error importando movimientos: ' + (err?.message || err));
   }
 });
+
