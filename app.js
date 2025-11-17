@@ -22,17 +22,18 @@ const centsToEUR = (c) => fmtEUR.format((c||0)/100);
 
 // Categorías iniciales
 const CATEGORIES = [
-  { id:'salary', name:'Salario', emoji:'💼', color:'#22c55e' },
-  { id:'freelance', name:'Freelance', emoji:'🧾', color:'#10b981' },
-  { id:'other_inc', name:'Otros ingresos', emoji:'🎁', color:'#84cc16' },
-  { id:'food', name:'Comida', emoji:'🍽️', color:'#f97316' },
-  { id:'groceries', name:'Super', emoji:'🛒', color:'#fb7185' },
-  { id:'rent', name:'Alquiler', emoji:'🏠', color:'#60a5fa' },
-  { id:'transport', name:'Transporte', emoji:'🚌', color:'#a78bfa' },
-  { id:'leisure', name:'Ocio', emoji:'🎮', color:'#f59e0b' },
-  { id:'health', name:'Salud', emoji:'💊', color:'#f43f5e' },
-  { id:'utilities', name:'Luz/Agua', emoji:'💡', color:'#38bdf8' },
-  { id:'other_exp', name:'Otros gastos', emoji:'🧩', color:'#94a3b8' }
+  { id:'salary',      name:'Salario',         emoji:'💼', color:'#22c55e' },
+  { id:'other_inc',   name:'Otros ingresos',  emoji:'💰', color:'#84cc16' },
+  { id:'freelance',   name:'Freelance',       emoji:'👨🏽‍💻', color:'#10b981' },
+  { id:'restaurants', name:'Restaurantes',    emoji:'🍽️', color:'#f97316' },
+  { id:'groceries',   name:'Supermercado',    emoji:'🛒', color:'#fb7185' },
+  { id:'rent',        name:'Alquiler',        emoji:'🏠', color:'#60a5fa' },
+  { id:'utilities',   name:'Luz/Agua',        emoji:'💡', color:'#38bdf8' },
+  { id:'travel',      name:'Viajes',          emoji:'🛫', color:'#a78bfa' },
+  { id:'leisure',     name:'Ocio',            emoji:'🎉', color:'#f59e0b' },
+  { id:'onlineshop',  name:'Pedidos online',  emoji:'🛍️', color:'#f43f5e' },
+  { id:'health',      name:'Selfcare',        emoji:'💆🏽', color:'#000c8dff' },
+  { id:'other_exp',   name:'Otros gastos',    emoji:'🧾', color:'#94a3b8' }
 ];
 
 // Estado
