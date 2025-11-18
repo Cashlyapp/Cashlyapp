@@ -19,6 +19,7 @@ export const CATEGORIES = [
   { id: 'leisure',      type: 'expense', name: 'Ocio',           emoji: '🎉' },
   { id: 'selfcare',     type: 'expense', name: 'SelfCare',       emoji: '💆🏽' },
   { id: 'shopping',     type: 'expense', name: 'Compras',        emoji: '🛍️' },
+  { id: 'wedding',      type: 'expense', name: 'Boda',           emoji: '👰🏻‍♀️' },
   { id: 'other_exp',    type: 'expense', name: 'Otros gastos',   emoji: '➖' }
 ];
 
