@@ -9,7 +9,8 @@ import {
 
 import {
   CATEGORIES,
-  CATEGORY_BY_ID
+  CATEGORY_BY_ID,
+  CHART_COLORS
 } from './categories.js';
 
 import {
@@ -35,12 +36,23 @@ import {
 // 2. Estado global y referencias DOM
 // =============================
 
-/** @type {{ month: string, txs: InternalTx[], chart: any }} */
+/** @type {{
+ *   month: string,
+ *   txs: InternalTx[],
+ *   chartExpenses: any,
+ *   chartIncome: any,
+ *   activeChartIndex: number
+ * }} */
 const state = {
   month: toMonthKey(new Date()),
   txs: [],
-  chart: null
+  chartExpenses: null,
+  chartIncome: null,
+  activeChartIndex: 0
 };
+
+
+window.__state = state;
 
 const el = {
   // Cabecera / toolbar
@@ -54,7 +66,10 @@ const el = {
   totalsIncome:   document.getElementById('incomeTotal'),
   totalsExpense:  document.getElementById('expenseTotal'),
   totalsBalance:  document.getElementById('balance'),
-  donutCanvas:    document.getElementById('chartCategories'),
+  donutCarousel:  document.getElementById('chartCarousel'),
+  donutExpenses:  document.getElementById('chartDonutExpenses'),
+  donutIncome:    document.getElementById('chartDonutIncome'),
+  donutDots:      Array.from(document.querySelectorAll('.chart-dots .dot')),
 
   // FAB + diálogo de movimiento
   fabAdd:       document.getElementById('fabAdd'),
@@ -237,7 +252,7 @@ function refreshList() {
     el.txList.appendChild(frag);
   }
 
-  // ----- Totales y agregados por categoría (solo gastos en el donut) -----
+  // ----- Totales y agregados por categoría (solo gastos en el donut base) -----
   let inc = 0;
   let exp = 0;
   const byCategory = {};
@@ -260,55 +275,172 @@ function refreshList() {
   el.totalsExpense.textContent = centsToEUR(exp);
   el.totalsBalance.textContent = centsToEUR(inc - exp);
 
-  renderDonutChart(byCategory);
+  // Donut 1: distribución de gastos
+  // Donut 2: gastos sobre ingresos (con "Restante")
+  renderDonutCharts(byCategory, inc, exp);
 }
-
 
 function toggleEmptyState(show) {
   if (!el.emptyState) return;
   el.emptyState.style.display = show ? 'block' : 'none';
 }
 
+// Gráficos donut con Chart.js
+function renderExpensesDonut(byCategory) {
+  if (!el.donutExpenses) return;
 
+  const canvas = el.donutExpenses;
+  const ctx = canvas.getContext('2d');
 
-// Gráfico donut con Chart.js
-function renderDonutChart(byCategory) {
-  if (!el.donutCanvas) return;
+  // Forzar tamaño estable ANTES de crear Chart.js
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetWidth;
 
-  const ctx = el.donutCanvas.getContext('2d');
-  const entries = Object.entries(byCategory).filter(([_, v]) => v > 0);
-
-  if (state.chart) {
-    state.chart.destroy();
-    state.chart = null;
+  // Destruir el gráfico anterior
+  if (state.chartExpenses) {
+    state.chartExpenses.destroy();
+    state.chartExpenses = null;
   }
 
+  const entries = Object.entries(byCategory).filter(([_, v]) => v > 0);
+
   if (!entries.length) {
-    // nada que mostrar
+    console.log('[ExpensesDonut] sin entradas, no pinto nada');
     return;
   }
 
-  const labels = entries.map(([id]) => (CATEGORY_BY_ID[id]?.name || 'Otros gastos'));
+  const labels = entries.map(([id]) => CATEGORY_BY_ID[id]?.name || 'Otros gastos');
   const values = entries.map(([_, cents]) => Math.round(cents / 100));
+  const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
 
-  state.chart = new Chart(ctx, {
+  state.chartExpenses = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels,
       datasets: [{
-        data: values
+        data: values,
+        backgroundColor: colors,
+        borderColor: '#050918',
+        borderWidth: 2
       }]
     },
     options: {
+      responsive: false, // 👈 importante
       plugins: {
         legend: {
-          position: 'bottom'
+          position: 'bottom',
+          labels: { color: '#ffffff' }
         }
       },
-      cutout: '60%'
+      cutout: '50%'
     }
   });
 }
+
+function renderIncomeDonut(byCategory, totalIncomeCents, totalExpenseCents) {
+  if (!el.donutIncome) return;
+
+  const canvas = el.donutIncome;
+  const ctx = canvas.getContext('2d');
+
+  // Forzar tamaño ANTES de crear el Chart
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetWidth;
+
+  if (state.chartIncome) {
+    state.chartIncome.destroy();
+    state.chartIncome = null;
+  }
+
+  const entries = Object.entries(byCategory).filter(([_, v]) => v > 0);
+
+  const labels = [];
+  const values = [];
+
+  // Caso A: hay ingresos → usar ingresos como 100%
+  if (totalIncomeCents > 0) {
+    for (const [catId, cents] of entries) {
+      if (!cents) continue;
+      const name = CATEGORY_BY_ID[catId]?.name || 'Otros gastos';
+      labels.push(name);
+      values.push(Math.round(cents / 100));
+    }
+
+    labels.push('Restante');
+    values.push(Math.round((totalIncomeCents - totalExpenseCents) / 100));
+  }
+  // Caso B: no hay ingresos pero sí gastos → mostrar solo gastos
+  else if (entries.length) {
+    for (const [catId, cents] of entries) {
+      if (!cents) continue;
+      const name = CATEGORY_BY_ID[catId]?.name || 'Otros gastos';
+      labels.push(name);
+      values.push(Math.round(cents / 100));
+    }
+  }
+
+  if (!values.length) {
+    console.log('[IncomeDonut] sin valores; no dibujo nada');
+    return;
+  }
+
+  const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+
+  state.chartIncome = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderColor: '#050918',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#ffffff' }
+        }
+      },
+      cutout: '50%'
+    }
+  });
+}
+
+
+function renderDonutCharts(byCategory, totalIncomeCents, totalExpenseCents) {
+  console.log('[renderDonutCharts]', { byCategory, totalIncomeCents, totalExpenseCents });
+  renderExpensesDonut(byCategory);
+  renderIncomeDonut(byCategory, totalIncomeCents, totalExpenseCents);
+}
+
+
+function setActiveChart(index) {
+  state.activeChartIndex = index;
+
+  // Mostrar/ocultar cada canvas
+  if (el.donutExpenses) {
+    el.donutExpenses.classList.toggle('chart-visible', index === 0);
+  }
+  if (el.donutIncome) {
+    el.donutIncome.classList.toggle('chart-visible', index === 1);
+  }
+
+  // Actualizar los dots
+  if (Array.isArray(el.donutDots)) {
+    el.donutDots.forEach((dot, idx) => {
+      dot.classList.toggle('dot--active', idx === index);
+    });
+  }
+}
+
 
 
 // =============================
@@ -320,8 +452,62 @@ state.month = toMonthKey(new Date());
 updateMonthLabel();
 refreshList();
 
+// estado inicial del carrusel de donuts
+setActiveChart(0);
+
+// Navegación de meses
 el.btnPrevMonth?.addEventListener('click', () => changeMonth(-1));
 el.btnNextMonth?.addEventListener('click', () => changeMonth(1));
+
+// Carrusel: dots
+if (Array.isArray(el.donutDots)) {
+  el.donutDots.forEach((dot, idx) => {
+    dot.addEventListener('click', () => setActiveChart(idx));
+  });
+}
+
+// Carrusel: swipe en móviles
+let touchStartX = null;
+if (el.donutCarousel) {
+  el.donutCarousel.addEventListener('touchstart', (ev) => {
+    if (!ev.touches || !ev.touches.length) return;
+    touchStartX = ev.touches[0].clientX;
+  });
+
+  el.donutCarousel.addEventListener('touchend', (ev) => {
+    if (touchStartX == null || !ev.changedTouches || !ev.changedTouches.length) return;
+    const dx = ev.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 40) {
+      const direction = dx < 0 ? 1 : -1;
+      const next = Math.min(1, Math.max(0, state.activeChartIndex + direction));
+      setActiveChart(next);
+    }
+    touchStartX = null;
+  });
+}
+
+// (opcional) Swipe con ratón en desktop
+let mouseDownX = null;
+if (el.donutCarousel) {
+  el.donutCarousel.addEventListener('mousedown', (ev) => {
+    mouseDownX = ev.clientX;
+  });
+
+  el.donutCarousel.addEventListener('mouseup', (ev) => {
+    if (mouseDownX == null) return;
+    const dx = ev.clientX - mouseDownX;
+    if (Math.abs(dx) > 40) {
+      const direction = dx < 0 ? 1 : -1;
+      const next = Math.min(1, Math.max(0, state.activeChartIndex + direction));
+      setActiveChart(next);
+    }
+    mouseDownX = null;
+  });
+
+  el.donutCarousel.addEventListener('mouseleave', () => {
+    mouseDownX = null;
+  });
+}
 
 
 // =============================

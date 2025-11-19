@@ -64,7 +64,22 @@
         <div id="balance" class="card-value">—</div>
       </div>
     </div>
-    <canvas id="chartCategories" height="160"></canvas>
+    <div class="chart-carousel chart-carousel--slide0" id="chartCarousel">
+      <canvas id="chartDonutExpenses" height="160"></canvas>
+      <canvas id="chartDonutIncome" height="160"></canvas>
+    </div>
+    <div class="chart-dots">
+      <button
+        type="button"
+        class="dot dot--active"
+        data-chart="0"
+        aria-label="Ver distribución de gastos"></button>
+      <button
+        type="button"
+        class="dot"
+        data-chart="1"
+        aria-label="Ver gastos sobre ingresos"></button>
+    </div>
   </section>
 
   <section class="list">
