@@ -92,8 +92,9 @@ const el = {
   recurringEndsOn:  document.getElementById('recurringEndsOn'),
 
   // Export / import JSON
-  btnExport:   document.getElementById('btnExport'),
-  fileImport:  document.getElementById('fileImport'),
+  btnExport:      document.getElementById('btnExport'),
+  btnExportCSV:   document.getElementById('btnExportCSV'),
+  fileImport:     document.getElementById('fileImport'),
 
   // OCR
   btnOcr:       document.getElementById('btnOcr'),
@@ -709,6 +710,8 @@ el.btnExport?.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+el.btnExportCSV?.addEventListener('click', () => { exportCSV(); });
+
 // Importar JSON (se insertan como nuevos docs)
 el.fileImport?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -758,6 +761,33 @@ el.fileImport?.addEventListener('change', async (e) => {
     e.target.value = '';
   }
 });
+
+function exportCSV() {
+  const rows = [
+    ['Fecha','Tipo','Categoría','Descripción','Importe']
+  ];
+
+  state.txs.forEach(t => {
+    rows.push([
+      t.date,
+      t.type,
+      CATEGORY_BY_ID[t.categoryId]?.name || '',
+      t.description || '',
+      (t.amountCents / 100).toFixed(2)
+    ]);
+  });
+
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type:'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cashly_movimientos.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 
 // =============================
 // 9. Autenticación (login/registro)
