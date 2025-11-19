@@ -10,7 +10,10 @@ import {
 import {
   CATEGORIES,
   CATEGORY_BY_ID,
-  CHART_COLORS
+  CHART_COLORS,
+  COLOR_HISTORY_INCOME,
+  COLOR_HISTORY_EXPENSE,
+  COLOR_HISTORY_BALANCE
 } from './categories.js';
 
 import {
@@ -41,15 +44,18 @@ import {
  *   txs: InternalTx[],
  *   chartExpenses: any,
  *   chartIncome: any,
- *   activeChartIndex: number
+ *   activeChartIndex: number,
+ *   chartHistory: any
  * }} */
 const state = {
   month: toMonthKey(new Date()),
   txs: [],
   chartExpenses: null,
   chartIncome: null,
-  activeChartIndex: 0
+  activeChartIndex: 0,
+  chartHistory: null
 };
+
 
 
 window.__state = state;
@@ -118,7 +124,13 @@ const el = {
   // Diálogo borrar
   dlgConfirmDelete: document.getElementById('dlgConfirm'),
   btnConfirmDelete: document.getElementById('btnYes'),
-  btnCancelDelete:  document.getElementById('btnNo')
+  btnCancelDelete:  document.getElementById('btnNo'),
+
+  // Histórico
+  dlgHistory:      document.getElementById('dlgHistory'),
+  historyCanvas:   document.getElementById('chartHistory'),
+  btnOpenHistory:  document.getElementById('btnOpenHistory'),
+  btnCloseHistory: document.getElementById('btnCloseHistory')
 };
 
 
@@ -310,6 +322,11 @@ function refreshList() {
   // Donut 1: distribución de gastos
   // Donut 2: gastos sobre ingresos (con "Restante")
   renderDonutCharts(byCategory, inc, exp);
+
+  // Si el diálogo de histórico está abierto, lo refrescamos
+  if (el.dlgHistory?.open) {
+    renderHistoryChart();
+  }
 }
 
 function toggleEmptyState(show) {
@@ -470,6 +487,147 @@ function setActiveChart(index) {
   }
 }
 
+// =============================
+// 4.x Histórico de meses
+// =============================
+
+// Construye las series para el histórico (últimos N meses con datos)
+function buildHistorySeries(limitMonths = 8) {
+  /** @type {Map<string, {income: number, expense: number}>} */
+  const buckets = new Map();
+
+  for (const tx of state.txs) {
+    if (!tx.date) continue;
+    const d = new Date(tx.date + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) continue;
+
+    const key = toMonthKey(d); // YYYY-MM
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { income: 0, expense: 0 };
+      buckets.set(key, bucket);
+    }
+
+    if (tx.type === 'income') bucket.income += tx.amountCents || 0;
+    else bucket.expense += tx.amountCents || 0;
+  }
+
+  const keys = Array.from(buckets.keys()).sort();      // orden cronológico
+  const lastKeys = keys.slice(-limitMonths);           // nos quedamos con los últimos N
+
+  const labels = [];
+  const income = [];
+  const expense = [];
+  const balance = [];
+
+  for (const key of lastKeys) {
+    const [y, m] = key.split('-').map(Number);
+    const b = buckets.get(key) || { income: 0, expense: 0 };
+    const inc = b.income;
+    const exp = b.expense;
+
+    labels.push(`${monthNames[m - 1].slice(0, 3)} ${String(y).slice(2)}`); // "Nov 25"
+    income.push(inc / 100);
+    expense.push(exp / 100);
+    balance.push((inc - exp) / 100);
+  }
+
+  return { labels, income, expense, balance };
+}
+
+function renderHistoryChart() {
+  if (!el.historyCanvas) return;
+
+  const { labels, income, expense, balance } = buildHistorySeries(8);
+
+  // Si no hay datos, destruimos el gráfico anterior y listo
+  if (!labels.length) {
+    if (state.chartHistory) {
+      state.chartHistory.destroy();
+      state.chartHistory = null;
+    }
+    return;
+  }
+
+  const ctx = el.historyCanvas.getContext('2d');
+
+  if (state.chartHistory) {
+    state.chartHistory.destroy();
+    state.chartHistory = null;
+  }
+
+  state.chartHistory = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Ingresos',
+          data: income,
+          backgroundColor: COLOR_HISTORY_INCOME,
+          borderRadius: 4
+        },
+        {
+          label: 'Gastos',
+          data: expense,
+          backgroundColor: COLOR_HISTORY_EXPENSE,
+          borderRadius: 4
+        },
+        {
+          label: 'Saldo',
+          data: balance,
+          type: 'line',
+          borderColor: COLOR_HISTORY_BALANCE,
+          borderWidth: 2,
+          tension: 0.3,
+          pointRadius: 3,
+          yAxisID: 'y'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: '#e5e7eb' }
+        },
+        y: {
+          grid: { color: 'rgba(148, 163, 184, 0.2)' },
+          ticks: {
+            color: '#e5e7eb',
+            callback(value) {
+              const n = Number(value);
+              if (Number.isNaN(n)) return value;
+              return n.toLocaleString('es-ES', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+              }) + ' €';
+            }
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#e5e7eb',
+            boxWidth: 12,
+            boxHeight: 12
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = ctx.parsed.y;
+              return `${ctx.dataset.label}: ${fmtEUR(Math.round(v * 100))}`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
 
 
 // =============================
@@ -1150,3 +1308,20 @@ el.ocrImport?.addEventListener('click', async () => {
   }
 });
 
+// =============================
+// 11. Diálogo de histórico
+// =============================
+
+el.btnOpenHistory?.addEventListener('click', () => {
+  if (!el.dlgHistory) return;
+  el.dlgHistory.showModal();
+
+  // Renderizamos el gráfico justo al abrir (el canvas ya tiene tamaño)
+  setTimeout(() => {
+    renderHistoryChart();
+  }, 0);
+});
+
+el.btnCloseHistory?.addEventListener('click', () => {
+  el.dlgHistory?.close();
+});

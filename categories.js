@@ -38,3 +38,8 @@ export const CHART_COLORS = [
   '#c8d6e5', // gris claro
 ];
 
+export const COLOR_HISTORY_INCOME  = '#22c55e'; // verde ingresos
+export const COLOR_HISTORY_EXPENSE = '#f97316'; // naranja gastos
+export const COLOR_HISTORY_BALANCE = '#6366f1'; // línea saldo
+
+

@@ -68,6 +68,11 @@
       <span>Exportar CSV</span>
     </button>
 
+    <button type="button" id="btnOpenHistory" class="toolbar-menu__item">
+      <span class="toolbar-menu__icon">📈</span>
+      <span>Histórico de meses</span>
+    </button>
+
     <hr />
 
     <button id="btnLogout" type="button">
@@ -122,7 +127,11 @@
   <section class="list">
     <h2>Movimientos</h2>
     <ul id="txList" class="tx-list"></ul>
-    <div id="emptyState" class="empty">Aún no hay movimientos este mes.</div>
+    <div id="emptyState" class="empty-state">
+      <img src="empty.svg" alt="">
+      <p>No hay movimientos este mes</p>
+      <p class="small">Añade el primero con el botón +</p>
+    </div>
   </section>
 </main>
 
@@ -149,6 +158,23 @@
     </menu>
   </form>
 </dialog>
+
+<!-- Diálogo histórico de últimos meses -->
+<dialog id="dlgHistory" class="sheet">
+  <h3>Histórico de últimos meses</h3>
+  <p class="sub">
+    Ingresos, gastos y saldo de los últimos meses con datos.
+  </p>
+
+  <div class="history-chart-wrapper">
+    <canvas id="chartHistory" height="260"></canvas>
+  </div>
+
+  <menu>
+    <button type="button" id="btnCloseHistory">Cerrar</button>
+  </menu>
+</dialog>
+
 
 <!-- Diálogo OCR -->
 <dialog id="dlgOcr" class="sheet">
