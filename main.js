@@ -296,6 +296,16 @@ function refreshList() {
   el.totalsExpense.textContent = centsToEUR(exp);
   el.totalsBalance.textContent = centsToEUR(inc - exp);
 
+  // KPI: porcentaje de ingresos gastados
+  const kpi = document.getElementById('kpiSpendRate');
+  if (inc > 0) {
+    const rate = (exp / inc) * 100;
+    kpi.textContent = `Este mes has gastado el ${rate.toFixed(1)}% de tus ingresos`;
+  } else {
+    kpi.textContent = '';
+  }
+
+
   // Donut 1: distribución de gastos
   // Donut 2: gastos sobre ingresos (con "Restante")
   renderDonutCharts(byCategory, inc, exp);
