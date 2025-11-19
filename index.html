@@ -24,24 +24,55 @@
 </head>
 <body>
 <header class="app-bar">
-  <div class="title">Cashly</div>
+  <div class="app-brand">
+    <span class="title">Cashly</span>
+  </div>
+
   <div class="spacer"></div>
 
-  <!-- OCR -->
-  <button id="btnOcr" class="icon-btn" title="Importar desde imagen">🖼️</button>
+  <!-- Importar desde imagen (IA) siempre visible -->
+  <button
+    id="btnOcr"
+    class="icon-btn icon-ai"
+    title="Importar desde imagen con IA"
+    aria-label="Importar desde imagen con IA">
+    <span class="icon-ai-glyph"></span>
+    <span class="icon-ai-label">IA</span>
+  </button>
   <input type="file" id="ocrFiles" accept="image/*" multiple hidden>
 
-  <div class="spacer"></div>
+  <!-- Menú hamburguesa -->
+  <button
+    id="btnMenu"
+    class="icon-btn icon-menu"
+    title="Más opciones"
+    aria-label="Más opciones">
+    MENU
+  </button>
 
-  <!-- Export / Import -->
-  <button id="btnExport" class="icon-btn" title="Exportar JSON">⤴︎</button>
-  <label class="file-label" title="Importar JSON">
-    ⤵︎ <input type="file" id="fileImport" accept="application/json" hidden>
-  </label>
+  <!-- Menú desplegable -->
+  <div id="toolbarMenu" class="toolbar-menu">
+    <button id="btnExport" type="button">
+      <span class="menu-icon menu-icon-export"></span>
+      <span>Exportar JSON</span>
+    </button>
 
-  <!-- Logout -->
-  <button id="btnLogout" class="icon-btn" title="Cerrar sesión">⎋</button>
+    <label class="file-label">
+      <span class="menu-icon menu-icon-import"></span>
+      <span>Importar JSON</span>
+      <input type="file" id="fileImport" accept="application/json" hidden>
+    </label>
+
+    <hr />
+
+    <button id="btnLogout" type="button">
+      <span class="menu-icon menu-icon-logout"></span>
+      <span>Cerrar sesión</span>
+    </button>
+  </div>
 </header>
+
+
 
 <main>
   <section class="summary">

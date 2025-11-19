@@ -59,6 +59,8 @@ const el = {
   monthLabel:   document.getElementById('currentMonth'),
   btnPrevMonth: document.getElementById('prevMonth'),
   btnNextMonth: document.getElementById('nextMonth'),
+  btnMenu:      document.getElementById('btnMenu'),
+  toolbarMenu:  document.getElementById('toolbarMenu'),
 
   // Resumen + lista
   txList:         document.getElementById('txList'),
@@ -150,6 +152,25 @@ function initCategoryOptions() {
   });
   el.selectCategory.appendChild(frag);
 }
+
+// =============================
+// Menú hamburguesa de la barra
+// =============================
+el.btnMenu?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  el.toolbarMenu?.classList.toggle('toolbar-menu--open');
+});
+
+// Cerrar el menú al hacer clic fuera
+document.addEventListener('click', (e) => {
+  if (!el.toolbarMenu?.classList.contains('toolbar-menu--open')) return;
+
+  // Si hacemos click dentro del menú o en el botón, no cerrar
+  if (e.target.closest('#toolbarMenu') || e.target.closest('#btnMenu')) return;
+
+  el.toolbarMenu.classList.remove('toolbar-menu--open');
+});
+
 
 // =============================
 // 4. Renderizado principal

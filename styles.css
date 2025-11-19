@@ -32,6 +32,231 @@ body{
   border:1px solid var(--ring); background:transparent; color:var(--text);
   padding:6px 10px; border-radius:10px; cursor:pointer; font-size:14px;
 }
+.app-bar{
+  position:sticky;
+  top:0;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  padding:12px 16px;
+  background:rgba(11,18,32,.9);
+  backdrop-filter: blur(10px);
+  border-bottom:1px solid #0f1a33;
+}
+
+.app-brand{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.title{
+  font-weight:700;
+}
+
+.spacer{
+  flex:1;
+}
+
+/* Botones visibles en la barra */
+.icon-btn{
+  border:1px solid var(--ring);
+  background:transparent;
+  color:var(--text);
+  border-radius:999px;
+  cursor:pointer;
+  font-size:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-width:32px;
+  min-height:32px;
+  padding:6px 8px;
+  transition:background .15s ease, border-color .15s ease, transform .1s ease, opacity .15s ease;
+}
+
+.icon-btn:hover{
+  background:rgba(148,163,184,0.16);
+  border-color:var(--accent);
+  transform:translateY(-1px);
+  opacity:1;
+}
+
+/* Botón IA: mini icono + texto */
+.icon-ai{
+  gap:6px;
+  padding-inline:10px;
+}
+
+.icon-ai-glyph{
+  width:18px;
+  height:18px;
+  border-radius:6px;
+  position:relative;
+  background:linear-gradient(135deg,#6366f1,#a855f7);
+  box-shadow:0 0 0 1px rgba(15,23,42,0.8);
+}
+
+/* “cámara” dibujada en CSS dentro del cuadradito */
+.icon-ai-glyph::before,
+.icon-ai-glyph::after{
+  content:'';
+  position:absolute;
+}
+
+.icon-ai-glyph::before{
+  /* cuerpo de la cámara */
+  inset:4px 3px;
+  border-radius:4px;
+  border:2px solid rgba(15,23,42,0.95);
+}
+
+.icon-ai-glyph::after{
+  /* lente */
+  width:6px;
+  height:6px;
+  border-radius:999px;
+  border:2px solid rgba(15,23,42,0.95);
+  top:6px;
+  left:50%;
+  transform:translateX(-50%);
+}
+
+.icon-ai-label{
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+}
+
+/* Botón menú hamburguesa */
+.icon-menu{
+  padding-inline:8px;
+}
+
+.icon-menu span{
+  display:block;
+  width:16px;
+  height:2px;
+  border-radius:999px;
+  background:var(--text);
+  margin:2px 0;
+}
+
+/* Menú desplegable (ya lo tenías, se amplía con iconos) */
+.toolbar-menu{
+  position:absolute;
+  top:56px;
+  right:16px;
+  background:var(--card);
+  border-radius:16px;
+  border:1px solid var(--ring);
+  padding:6px 0;
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+  min-width:190px;
+  display:none;
+}
+
+.toolbar-menu--open{
+  display:block;
+}
+
+.toolbar-menu button,
+.toolbar-menu .file-label{
+  width:100%;
+  border:none;
+  background:transparent;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  font-size:14px;
+  cursor:pointer;
+  box-sizing:border-box;
+}
+
+.toolbar-menu button span,
+.toolbar-menu .file-label span{
+  text-align:left;
+}
+
+.toolbar-menu button:hover,
+.toolbar-menu .file-label:hover{
+  background:rgba(148,163,184,0.14);
+}
+
+.toolbar-menu hr{
+  border:none;
+  border-top:1px solid rgba(148,163,184,0.35);
+  margin:4px 0;
+}
+
+/* Iconitos del menú (export, import, logout) */
+.menu-icon{
+  width:16px;
+  height:16px;
+  border-radius:999px;
+  box-shadow:0 0 0 1px rgba(148,163,184,.6);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:10px;
+  position:relative;
+}
+
+/* Flecha hacia arriba (exportar) */
+.menu-icon-export::before{
+  content:'';
+  width:2px;
+  height:8px;
+  background:var(--text);
+  border-radius:999px;
+  transform:translateY(2px);
+}
+.menu-icon-export::after{
+  content:'';
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-bottom:5px solid var(--text);
+  position:absolute;
+  top:2px;
+}
+
+/* Flecha hacia abajo (importar) */
+.menu-icon-import::before{
+  content:'';
+  width:2px;
+  height:8px;
+  background:var(--text);
+  border-radius:999px;
+  transform:translateY(-2px);
+}
+.menu-icon-import::after{
+  content:'';
+  border-left:4px solid transparent;
+  border-right:4px solid transparent;
+  border-top:5px solid var(--text);
+  position:absolute;
+  bottom:2px;
+}
+
+/* Icono salir (logout) */
+.menu-icon-logout::before{
+  content:'';
+  width:8px;
+  height:2px;
+  background:var(--text);
+  border-radius:999px;
+}
+.menu-icon-logout::after{
+  content:'';
+  border-top:4px solid transparent;
+  border-bottom:4px solid transparent;
+  border-left:5px solid var(--text);
+  position:absolute;
+  right:2px;
+}
+
 
 main{padding:16px; max-width:900px; margin:0 auto}
 
