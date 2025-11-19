@@ -307,7 +307,6 @@ function renderExpensesDonut(byCategory) {
   const entries = Object.entries(byCategory).filter(([_, v]) => v > 0);
 
   if (!entries.length) {
-    console.log('[ExpensesDonut] sin entradas, no pinto nada');
     return;
   }
 
@@ -384,7 +383,6 @@ function renderIncomeDonut(byCategory, totalIncomeCents, totalExpenseCents) {
   }
 
   if (!values.length) {
-    console.log('[IncomeDonut] sin valores; no dibujo nada');
     return;
   }
 
@@ -416,7 +414,6 @@ function renderIncomeDonut(byCategory, totalIncomeCents, totalExpenseCents) {
 
 
 function renderDonutCharts(byCategory, totalIncomeCents, totalExpenseCents) {
-  console.log('[renderDonutCharts]', { byCategory, totalIncomeCents, totalExpenseCents });
   renderExpensesDonut(byCategory);
   renderIncomeDonut(byCategory, totalIncomeCents, totalExpenseCents);
 }
