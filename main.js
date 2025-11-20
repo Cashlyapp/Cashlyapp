@@ -78,6 +78,7 @@ const el = {
   donutExpenses:  document.getElementById('chartDonutExpenses'),
   donutIncome:    document.getElementById('chartDonutIncome'),
   donutDots:      Array.from(document.querySelectorAll('.chart-dots .dot')),
+  chartEmpty:    document.getElementById('chartEmpty'),
 
   // FAB + diálogo de movimiento
   fabAdd:       document.getElementById('fabAdd'),
@@ -274,13 +275,12 @@ function renderTxCard(tx) {
 // Render lista + totales + gráfico
 function refreshList() {
   const list = getVisibleMonthTxs();
-
+  const hasTx = list.length > 0;
+  toggleEmptyState(hasTx);
   // ----- Lista + estado vacío -----
   el.txList.innerHTML = '';
   if (!list.length) {
-    toggleEmptyState(true);
   } else {
-    toggleEmptyState(false);
     const frag = document.createDocumentFragment();
     list.forEach(tx => frag.appendChild(renderTxCard(tx)));
     el.txList.appendChild(frag);
@@ -329,10 +329,30 @@ function refreshList() {
   }
 }
 
-function toggleEmptyState(show) {
-  if (!el.emptyState) return;
-  el.emptyState.style.display = show ? 'block' : 'none';
+function toggleEmptyState(hasTx) {
+  // Empty state de la LISTA
+  if (el.emptyState) {
+    el.emptyState.classList.toggle('hidden', hasTx);
+  }
+
+  // Zona de DONUTS
+  const showCharts = hasTx;
+
+  if (el.donutCarousel) {
+    el.donutCarousel.classList.toggle('hidden', !showCharts);
+  }
+
+  if (Array.isArray(el.donutDots)) {
+    el.donutDots.forEach(dot => {
+      dot.classList.toggle('hidden', !showCharts);
+    });
+  }
+
+  if (el.chartEmpty) {
+    el.chartEmpty.classList.toggle('hidden', showCharts);
+  }
 }
+
 
 // Gráficos donut con Chart.js
 function renderExpensesDonut(byCategory) {
