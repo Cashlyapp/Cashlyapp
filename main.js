@@ -56,8 +56,6 @@ const state = {
   chartHistory: null
 };
 
-
-
 window.__state = state;
 
 const el = {
@@ -732,6 +730,30 @@ function resetFormForNew() {
   if (el.btnDeleteTx) el.btnDeleteTx.hidden = true;
 }
 
+function setDefaultRecurringEndIfNeeded() {
+  if (!el.recurringFreq || !el.recurringEndsOn || !el.inputDate) return;
+
+  const freq = el.recurringFreq.value;
+  const currentEnd = (el.recurringEndsOn.value || '').trim();
+  const baseDateStr = el.inputDate.value;
+
+  // Solo si es mensual, no hay fecha fin puesta y tenemos fecha base
+  if (freq !== 'monthly' || currentEnd || !baseDateStr) return;
+
+  const baseDate = new Date(baseDateStr + 'T00:00:00');
+  if (Number.isNaN(baseDate.getTime())) return;
+
+  const nextYear = new Date(baseDate);
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+
+  const yyyy = nextYear.getFullYear();
+  const mm = String(nextYear.getMonth() + 1).padStart(2, '0');
+  const dd = String(nextYear.getDate()).padStart(2, '0');
+
+  el.recurringEndsOn.value = `${yyyy}-${mm}-${dd}`;
+}
+
+
 
 function openEditDialog(tx) {
   el.form.reset();
@@ -824,15 +846,35 @@ el.form?.addEventListener('submit', async (e) => {
 
   const type = raw.type === 'income' ? 'income' : 'expense';
 
+  // --- NUEVO: lógica de recurrentes ---
+  let recurringFreq = raw.recurringFreq || '';
+  let recurringEndsOn = (raw.recurringEndsOn || '').trim();
+
+  // Si es mensual y no han indicado fecha fin, poner por defecto 1 año después
+  if (recurringFreq === 'monthly' && !recurringEndsOn) {
+    const baseDate = new Date(raw.date + 'T00:00:00');
+    if (!Number.isNaN(baseDate.getTime())) {
+      const nextYear = new Date(baseDate);
+      nextYear.setFullYear(nextYear.getFullYear() + 1);
+
+      const yyyy = nextYear.getFullYear();
+      const mm = String(nextYear.getMonth() + 1).padStart(2, '0');
+      const dd = String(nextYear.getDate()).padStart(2, '0');
+
+      recurringEndsOn = `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
   const payload = {
     type,
     amountCents,
     category: raw.category || (type === 'income' ? 'other_inc' : 'other_exp'),
     date: raw.date,
     note: raw.note?.trim() || '',
-    recurringFreq: raw.recurringFreq || '',
-    recurringEndsOn: raw.recurringEndsOn || ''
+    recurringFreq,
+    recurringEndsOn
   };
+
 
   if (!isTransactionsReady()) {
     alert('Firebase aún no está listo. Espera un momento y reintenta.');
@@ -950,7 +992,7 @@ function exportCSV() {
       t.date,
       t.type,
       CATEGORY_BY_ID[t.categoryId]?.name || '',
-      t.description || '',
+      t.note || '',
       (t.amountCents / 100).toFixed(2)
     ]);
   });
@@ -965,6 +1007,145 @@ function exportCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// =============================
+// Limpieza avanzada de transacciones por rango de fechas
+// =============================
+
+/**
+ * Limpia transacciones en un rango de fechas.
+ *
+ * @param {string|null|undefined} fromISO  Fecha inicio (YYYY-MM-DD) o null/undefined → desde el principio.
+ * @param {string|null|undefined|boolean} toISOOrFlag
+ *        - Si es string: fecha fin (YYYY-MM-DD) o null → hasta el final.
+ *        - Si es boolean: se interpreta como removeAll (y no hay fecha fin).
+ * @param {boolean} [maybeFlag]           Si se pasa, es el removeAll cuando el 2º parámetro es fecha.
+ *
+ * Formas válidas:
+ *  cleanupDuplicateTransactions("2025-12-01");                 // desde 01/12 en adelante, SOLO duplicados
+ *  cleanupDuplicateTransactions("2025-12-01", true);           // desde 01/12 en adelante, TODOS
+ *  cleanupDuplicateTransactions("2025-12-01", "2100-12-30");   // entre 01/12 y 30/12/2100, SOLO duplicados
+ *  cleanupDuplicateTransactions("2025-12-01", "2100-12-30", true); // mismo rango, TODOS
+ *  cleanupDuplicateTransactions(null, "2025-12-31", true);     // desde el inicio hasta 31/12, TODOS
+ */
+async function cleanupDuplicateTransactions(fromISO, toISOOrFlag, maybeFlag) {
+  if (!isTransactionsReady()) {
+    alert('Firebase aún no está listo');
+    return;
+  }
+
+  // --- Normalizar parámetros ---
+  let removeAll = false;
+  let toISO = null;
+
+  // Caso: cleanup("2025-12-01", true)
+  if (typeof toISOOrFlag === 'boolean') {
+    removeAll = toISOOrFlag;
+  } else {
+    toISO = toISOOrFlag || null;
+    if (typeof maybeFlag === 'boolean') {
+      removeAll = maybeFlag;
+    }
+  }
+
+  fromISO = fromISO || null;
+
+  if (!fromISO && !toISO) {
+    alert('Debes indicar al menos una fecha (desde, hasta o ambas)');
+    return;
+  }
+
+  let from = null;
+  let to = null;
+
+  if (fromISO) {
+    from = new Date(fromISO + 'T00:00:00');
+    if (isNaN(from)) {
+      alert('Fecha "desde" inválida. Usa YYYY-MM-DD');
+      return;
+    }
+  }
+
+  if (toISO) {
+    to = new Date(toISO + 'T23:59:59');
+    if (isNaN(to)) {
+      alert('Fecha "hasta" inválida. Usa YYYY-MM-DD');
+      return;
+    }
+  }
+
+  const seen = new Set();
+  const toDelete = [];
+  let totalInRange = 0;
+
+  for (const tx of state.txs) {
+    if (!tx?.id || !tx.date) continue;
+
+    const d = new Date(tx.date + 'T00:00:00');
+    if (isNaN(d)) continue;
+
+    if (from && d < from) continue;
+    if (to && d > to) continue;
+
+    totalInRange++;
+
+    if (removeAll) {
+      // MODO: borrar TODO en el rango
+      toDelete.push(tx.id);
+      continue;
+    }
+
+    // MODO: sólo duplicados
+    const key = [
+      tx.type,
+      tx.categoryId,
+      tx.amountCents,
+      (tx.note || '').trim().toLowerCase(),
+      tx.date
+    ].join('|');
+
+    if (seen.has(key)) {
+      toDelete.push(tx.id);
+    } else {
+      seen.add(key);
+    }
+  }
+
+  // Log de debug para la consola
+  console.log('[cleanupDuplicateTransactions] from:', fromISO, 'to:', toISO, 'removeAll:', removeAll);
+  console.log('[cleanupDuplicateTransactions] total en rango:', totalInRange, 'a borrar:', toDelete.length);
+
+  if (!toDelete.length) {
+    if (removeAll) {
+      alert(totalInRange === 0
+        ? 'No hay transacciones en ese rango'
+        : 'Hay transacciones en el rango pero ninguna ha sido marcada para borrar (revisa la lógica)'
+      );
+    } else {
+      alert('No se han encontrado transacciones duplicadas en ese rango');
+    }
+    return;
+  }
+
+  let desc = '';
+  if (fromISO && toISO) desc = `entre ${fromISO} y ${toISO}`;
+  else if (fromISO) desc = `desde ${fromISO} hasta el final`;
+  else if (toISO) desc = `desde el inicio hasta ${toISO}`;
+
+  const modo = removeAll ? 'TODAS las transacciones' : 'las transacciones duplicadas';
+  const ok = confirm(`Se van a borrar ${toDelete.length} ${modo} ${desc}. ¿Continuar?`);
+  if (!ok) return;
+
+  try {
+    await Promise.all(toDelete.map(id => deleteTransaction(id)));
+    alert(`Borradas ${toDelete.length} ${removeAll ? 'transacciones' : 'duplicados'} ${desc}.`);
+  } catch (err) {
+    console.error(err);
+    alert('Error borrando: ' + (err?.message || err));
+  }
+}
+
+window.cleanupDuplicateTransactions = cleanupDuplicateTransactions;
 
 
 // =============================
@@ -1225,6 +1406,17 @@ el.ocrCancel?.addEventListener('click', () => {
   el.ocrStatus.textContent = 'Listo';
   ocrCandidates = [];
 });
+
+// Cuando se cambia la frecuencia recurrente
+el.recurringFreq?.addEventListener('change', () => {
+  setDefaultRecurringEndIfNeeded();
+});
+
+// Cuando se cambia la fecha, si es mensual y no hay fecha fin, recalcular
+el.inputDate?.addEventListener('change', () => {
+  setDefaultRecurringEndIfNeeded();
+});
+
 
 el.ocrFiles?.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files || []);

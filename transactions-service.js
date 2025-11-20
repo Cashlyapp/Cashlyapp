@@ -6,6 +6,13 @@ let _col = null;
 let _fs = null;          // módulo de firestore (collection, addDoc, etc.)
 let _unsubscribe = null; // para cancelar el onSnapshot si hiciera falta
 
+function toLocalISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * @typedef {Object} InternalTx
  * @property {string} id
@@ -22,11 +29,14 @@ function mapDocToTx(docSnap) {
   let dateISO;
 
   if (typeof dateField === 'string') {
+    // Ya viene como "YYYY-MM-DD"
     dateISO = dateField.slice(0, 10);
   } else if (dateField && typeof dateField.toDate === 'function') {
-    dateISO = dateField.toDate().toISOString().slice(0, 10);
+    // Timestamp de Firestore → Date local → cadena local
+    dateISO = toLocalISODate(dateField.toDate());
   } else {
-    dateISO = new Date().toISOString().slice(0, 10);
+    // Por seguridad, hoy
+    dateISO = toLocalISODate(new Date());
   }
 
   return {
@@ -35,6 +45,8 @@ function mapDocToTx(docSnap) {
     date: dateISO // SIEMPRE string en memoria
   };
 }
+
+
 
 function ensureReady() {
   if (!_db || !_user || !_col || !_fs) {
@@ -105,7 +117,15 @@ export async function initTransactionsListener(callbackOnData) {
  */
 export async function saveTransaction(formData, editingId) {
   ensureReady();
-  const { addDoc, serverTimestamp, doc, updateDoc } = _fs;
+  const {
+    addDoc,
+    serverTimestamp,
+    doc,
+    updateDoc,
+    query,
+    where,
+    getDocs
+  } = _fs;
 
   const baseTx = {
     type: formData.type,
@@ -119,40 +139,97 @@ export async function saveTransaction(formData, editingId) {
           endsOn: formData.recurringEndsOn || null
         }
       : null,
-    createdAt: serverTimestamp()
   };
 
+  // 1) EDICIÓN: solo actualiza el documento, sin tocar cuotas futuras
   if (editingId) {
-    await updateDoc(doc(_db, 'users', _user.uid, 'transactions', editingId), baseTx);
+    const txRef = doc(_db, 'users', _user.uid, 'transactions', editingId);
+    await updateDoc(txRef, {
+      type: baseTx.type,
+      amountCents: baseTx.amountCents,
+      categoryId: baseTx.categoryId,
+      date: baseTx.date,
+      note: baseTx.note,
+      recurring: baseTx.recurring,
+    });
     return;
   }
 
-  // Alta
-  await addDoc(_col, baseTx);
+  // 2) ALTA: creamos la transacción "base"
+  await addDoc(_col, {
+    type: baseTx.type,
+    amountCents: baseTx.amountCents,
+    categoryId: baseTx.categoryId,
+    date: baseTx.date,
+    note: baseTx.note,
+    recurring: baseTx.recurring,
+    createdAt: serverTimestamp()
+  });
 
-  // Generar futuras recurrentes (si procede)
-  if (baseTx.recurring && baseTx.recurring.freq) {
-    const ends = baseTx.recurring.endsOn ? new Date(baseTx.recurring.endsOn) : null;
-    let d = new Date(baseTx.date);
+  // 3) Si es recurrente mensual → generamos futuras cuotas
+  if (baseTx.recurring && baseTx.recurring.freq === 'monthly') {
+    let endsDate = null;
+
+    if (baseTx.recurring.endsOn) {
+      // endsOn viene como "YYYY-MM-DD" → lo llevamos al final de ese día
+      const tmp = new Date(baseTx.recurring.endsOn + 'T23:59:59');
+      if (!Number.isNaN(tmp.getTime())) {
+        endsDate = tmp;
+      }
+    }
+
+    // Si falla la fecha, nos salimos
+    const start = new Date(baseTx.date + 'T00:00:00');
+    if (Number.isNaN(start.getTime())) return;
+
+    // Seguridad: máximo 12 meses vista
+    const fallbackEnd = new Date(start);
+    fallbackEnd.setFullYear(fallbackEnd.getFullYear() + 1);
+
+    if (!endsDate || endsDate > fallbackEnd) {
+      endsDate = fallbackEnd;
+    }
+
+    // Cursor: primer día del mes de la fecha inicial
+    let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
 
     while (true) {
-      d = new Date(d);
-      if (baseTx.recurring.freq === 'monthly') d.setMonth(d.getMonth() + 1);
-      else if (baseTx.recurring.freq === 'weekly') d.setDate(d.getDate() + 7);
-      else break;
+      // Siguiente mes, SIEMPRE día 1
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      if (cursor > endsDate) break;
 
-      if (ends && d > ends) break;
+      const futureDate = toLocalISODate(cursor);
 
-      const future = {
-        ...baseTx,
-        date: d.toISOString().slice(0, 10),
-        recurring: null,
+      // 🔍 Evitar duplicados:
+      // si ya hay un movimiento con mismo tipo + categoría + importe + fecha, no creamos otro
+      const dupQuery = query(
+        _col,
+        where('type', '==', baseTx.type),
+        where('categoryId', '==', baseTx.categoryId),
+        where('amountCents', '==', baseTx.amountCents),
+        where('date', '==', futureDate)
+      );
+
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) {
+        // Ya existe algo igual para ese día → saltamos ese mes
+        continue;
+      }
+
+      // Crear la cuota futura
+      await addDoc(_col, {
+        type: baseTx.type,
+        amountCents: baseTx.amountCents,
+        categoryId: baseTx.categoryId,
+        date: futureDate,          // ← siempre "YYYY-MM-01"
+        note: baseTx.note || '',
+        recurring: null,           // las cuotas son movimientos “normales”
         createdAt: serverTimestamp()
-      };
-      await addDoc(_col, future);
+      });
     }
   }
 }
+
 
 /**
  * Elimina una transacción por id
