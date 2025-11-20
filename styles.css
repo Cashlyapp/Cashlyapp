@@ -50,6 +50,14 @@ body{
   gap:8px;
 }
 
+.brand-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+}
+
+
 .title{
   font-weight:700;
 }
