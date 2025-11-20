@@ -151,19 +151,26 @@ function changeMonth(delta) {
 }
 
 // Poblar categorías del <select>
-function initCategoryOptions() {
+// Poblar categorías del <select>
+function initCategoryOptions(forType) {
+  // Si no se pasa tipo, usamos el radio actual
+  const txType = forType || (el.radioIncome.checked ? 'income' : 'expense');
+
   el.selectCategory.innerHTML = '';
   const frag = document.createDocumentFragment();
-  CATEGORIES.filter(c => c.type === 'expense').concat(
-    CATEGORIES.filter(c => c.type === 'income')
-  ).forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = `${c.emoji} ${c.name}`;
-    frag.appendChild(opt);
-  });
+
+  CATEGORIES
+    .filter(c => c.type === txType)
+    .forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.emoji} ${c.name}`;
+      frag.appendChild(opt);
+    });
+
   el.selectCategory.appendChild(frag);
 }
+
 
 // =============================
 // Menú hamburguesa de la barra
@@ -653,6 +660,17 @@ function renderHistoryChart() {
 // =============================
 
 initCategoryOptions();
+
+if (el.radioIncome && el.radioExpense) {
+  const handleTypeChange = () => {
+    const txType = el.radioIncome.checked ? 'income' : 'expense';
+    initCategoryOptions(txType); // recarga categorías según el tipo
+  };
+
+  el.radioIncome.addEventListener('change', handleTypeChange);
+  el.radioExpense.addEventListener('change', handleTypeChange);
+}
+
 state.month = toMonthKey(new Date());
 updateMonthLabel();
 refreshList();
@@ -722,6 +740,7 @@ if (el.donutCarousel) {
 function resetFormForNew() {
   el.form.reset();
   el.radioIncome.checked = true;
+  initCategoryOptions('income'); // 👈 NUEVO: solo categorías de ingresos
   el.inputDate.value = todayISO();
   el.recurringFreq.value = '';
   el.recurringEndsOn.value = '';
@@ -759,6 +778,8 @@ function openEditDialog(tx) {
   el.form.reset();
   if (tx.type === 'income') el.radioIncome.checked = true;
   else el.radioExpense.checked = true;
+
+  initCategoryOptions(tx.type);
 
   el.inputAmount.value = (tx.amountCents / 100).toString().replace('.', ',');
   el.inputDate.value = tx.date || todayISO();
