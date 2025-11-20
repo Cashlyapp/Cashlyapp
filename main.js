@@ -23,6 +23,19 @@ import {
   isTransactionsReady
 } from './transactions-service.js';
 
+// ===== SPLASH CONTROL =====
+function hideSplash() {
+  const sp = document.getElementById('splash');
+  if (!sp) return;
+  sp.classList.add('hide');   // solo ocultar, sin eliminar
+}
+
+function showSplash() {
+  const sp = document.getElementById('splash');
+  if (!sp) return;
+  sp.classList.remove('hide'); // mostrar como overlay/spinner
+}
+
 /**
  * @typedef {Object} InternalTx
  * @property {string} id
@@ -131,6 +144,33 @@ const el = {
   btnOpenHistory:  document.getElementById('btnOpenHistory'),
   btnCloseHistory: document.getElementById('btnCloseHistory')
 };
+
+// Animación del logotipo al entrar (vía transición)
+function showLogoWithTransition() {
+  const logo = document.querySelector('.brand-logo');
+  if (!logo) return;
+
+  // Quitamos por si acaso
+  logo.classList.remove('brand-logo--visible');
+
+  // Esperamos al siguiente frame para asegurar que el estilo inicial (opacity 0)
+  // se ha aplicado antes de añadir la clase visible → transición garantizada
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      logo.classList.add('brand-logo--visible');
+    });
+  });
+}
+
+// Cuando el DOM está listo
+document.addEventListener('DOMContentLoaded', () => {
+  showLogoWithTransition();
+});
+
+// Cuando la página vuelve a mostrarse (PWA / volver atrás, etc.)
+window.addEventListener('pageshow', () => {
+  showLogoWithTransition();
+});
 
 
 // =============================
@@ -516,7 +556,8 @@ function setActiveChart(index) {
 // 4.x Histórico de meses
 // =============================
 
-// Construye las series para el histórico (últimos N meses con datos)
+// Construye las series para el histórico (últimos N meses con datos,
+// pero nunca por encima del mes actual)
 function buildHistorySeries(limitMonths = 8) {
   /** @type {Map<string, {income: number, expense: number}>} */
   const buckets = new Map();
@@ -526,7 +567,7 @@ function buildHistorySeries(limitMonths = 8) {
     const d = new Date(tx.date + 'T00:00:00');
     if (Number.isNaN(d.getTime())) continue;
 
-    const key = toMonthKey(d); // YYYY-MM
+    const key = toMonthKey(d); // "YYYY-MM"
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = { income: 0, expense: 0 };
@@ -537,8 +578,16 @@ function buildHistorySeries(limitMonths = 8) {
     else bucket.expense += tx.amountCents || 0;
   }
 
-  const keys = Array.from(buckets.keys()).sort();      // orden cronológico
-  const lastKeys = keys.slice(-limitMonths);           // nos quedamos con los últimos N
+  // Mes actual como límite superior
+  const currentMonthKey = toMonthKey(new Date());
+
+  // Nos quedamos solo con meses <= hoy y ordenados
+  const keys = Array
+    .from(buckets.keys())
+    .filter(k => k <= currentMonthKey)   // 👈 evita meses futuros (2026, etc.)
+    .sort();
+
+  const lastKeys = keys.slice(-limitMonths); // últimos N meses válidos
 
   const labels = [];
   const income = [];
@@ -605,8 +654,7 @@ function renderHistoryChart() {
           borderColor: COLOR_HISTORY_BALANCE,
           borderWidth: 2,
           tension: 0.3,
-          pointRadius: 3,
-          yAxisID: 'y'
+          pointRadius: 3
         }
       ]
     },
@@ -867,7 +915,7 @@ el.form?.addEventListener('submit', async (e) => {
 
   const type = raw.type === 'income' ? 'income' : 'expense';
 
-  // --- NUEVO: lógica de recurrentes ---
+  // --- lógica de recurrentes ---
   let recurringFreq = raw.recurringFreq || '';
   let recurringEndsOn = (raw.recurringEndsOn || '').trim();
 
@@ -896,21 +944,30 @@ el.form?.addEventListener('submit', async (e) => {
     recurringEndsOn
   };
 
-
   if (!isTransactionsReady()) {
     alert('Firebase aún no está listo. Espera un momento y reintenta.');
     return;
   }
 
+  const editingId = el.dlgTx.dataset.editingId || null;
+
+  // 1️⃣ Cerrar el diálogo ANTES de empezar el guardado
+  el.dlgTx.close();
+
+  // 2️⃣ Mostrar siempre la pantalla de carga mientras se guarda
+  showSplash();
+
   try {
-    const editingId = el.dlgTx.dataset.editingId || null;
     await saveTransaction(payload, editingId);
-    el.dlgTx.close();
   } catch (e2) {
     console.error(e2);
     alert('Error al guardar: ' + (e2?.message || e2));
+  } finally {
+    // 3️⃣ Ocultar pantalla de carga al terminar
+    hideSplash();
   }
 });
+
 
 
 // =============================
@@ -931,6 +988,8 @@ document.addEventListener('firebase-ready', () => {
     console.error(err);
     alert('Error inicializando datos: ' + (err?.message || err));
   });
+
+  hideSplash();
 });
 
 
