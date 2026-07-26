@@ -1,14 +1,20 @@
 
-const CACHE_NAME = 'finanzas-cache-v1';
+const CACHE_NAME = 'finanzas-cache-v2';
+
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
-  './app.js',
+  './main.js',
   './firebase.js',
+  './transactions-service.js',
+  './core-utils.js',
+  './categories.js',
   './manifest.webmanifest',
-  './icon-192.png',
+  './apple-touch-icon.png',
+  './assets/icon-192.png',
   './icon-512.png',
+  './Logo.png',
   'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
