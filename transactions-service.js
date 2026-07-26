@@ -20,7 +20,10 @@ function toLocalISODate(d) {
  * @property {number} amountCents
  * @property {string} categoryId
  * @property {string} date
+ * @property {string} [merchant]
+ * @property {string} [paymentCard]
  * @property {string} [note]
+ * @property {'manual'|'apple_pay'|'ocr'|'import'} [source]
  * @property {{freq: 'monthly'|'weekly', endsOn: (string|null)}|null} [recurring]
  */
 function mapDocToTx(docSnap) {
@@ -227,14 +230,17 @@ export async function saveTransaction(formData, editingId) {
 
       // Crear la cuota futura
       await addDoc(_col, {
-        type: baseTx.type,
-        amountCents: baseTx.amountCents,
-        categoryId: baseTx.categoryId,
-        date: futureDate,          // ← siempre "YYYY-MM-01"
-        note: baseTx.note || '',
-        recurring: null,           // las cuotas son movimientos “normales”
-        createdAt: serverTimestamp()
-      });
+  type: baseTx.type,
+  amountCents: baseTx.amountCents,
+  categoryId: baseTx.categoryId,
+  date: futureDate,
+  merchant: baseTx.merchant || '',
+  paymentCard: baseTx.paymentCard || '',
+  note: baseTx.note || '',
+  source: baseTx.source || 'manual',
+  recurring: null,
+  createdAt: serverTimestamp()
+});
     }
   }
 }
