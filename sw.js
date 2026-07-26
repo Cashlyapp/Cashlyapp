@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'finanzas-cache-v2';
+const CACHE_NAME = 'finanzas-cache-v3';
 
 const ASSETS = [
   './',
@@ -25,7 +25,18 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches
+      .keys()
+      .then(cacheNames =>
+        Promise.all(
+          cacheNames
+            .filter(cacheName => cacheName !== CACHE_NAME)
+            .map(cacheName => caches.delete(cacheName))
+        )
+      )
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (e) => {
