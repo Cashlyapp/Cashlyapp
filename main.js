@@ -789,17 +789,35 @@ if (el.donutCarousel) {
 
 function resetFormForNew() {
   el.form.reset();
-  if (el.inputMerchant) el.inputMerchant.value = '';
-  if (el.inputPaymentCard) el.inputPaymentCard.value = '';
+
+  if (el.inputMerchant) {
+    el.inputMerchant.value = '';
+  }
+
+  if (el.inputPaymentCard) {
+    el.inputPaymentCard.value = '';
+  }
+
+  if (el.btnCancelTx) {
+    el.btnCancelTx.textContent = 'Cancelar';
+  }
+
   el.radioIncome.checked = true;
-  initCategoryOptions('income'); // 👈 NUEVO: solo categorías de ingresos
+  el.radioExpense.checked = false;
+
+  initCategoryOptions('income');
+
   el.inputDate.value = todayISO();
   el.recurringFreq.value = '';
   el.recurringEndsOn.value = '';
+
   el.dlgTitle.textContent = 'Nuevo movimiento';
   el.dlgTx.dataset.editingId = '';
-  if (el.btnDeleteTx) el.btnDeleteTx.hidden = true;
   el.dlgTx.dataset.source = 'manual';
+
+  if (el.btnDeleteTx) {
+    el.btnDeleteTx.hidden = true;
+  }
 }
 
 function setDefaultRecurringEndIfNeeded() {
@@ -858,12 +876,18 @@ if (el.inputPaymentCard) {
   }
 
   el.dlgTitle.textContent = 'Editar movimiento';
-  el.dlgTx.dataset.editingId = tx.id;
-  if (el.btnDeleteTx) el.btnDeleteTx.hidden = false;
+el.dlgTx.dataset.editingId = tx.id;
+el.dlgTx.dataset.source = tx.source || 'manual';
 
-  el.dlgTx.dataset.source = tx.source || 'manual';
+if (el.btnDeleteTx) {
+  el.btnDeleteTx.hidden = false;
+}
 
-  el.dlgTx.showModal();
+if (el.btnCancelTx) {
+  el.btnCancelTx.textContent = 'Cancelar';
+}
+
+el.dlgTx.showModal();
 }
 
 
@@ -993,22 +1017,36 @@ el.form?.addEventListener('submit', async (e) => {
 // 7. Integración con Firebase
 // =============================
 
-document.addEventListener('firebase-ready', () => {
+const pendingShortcutExpense = getShortcutExpenseFromUrl();
+
+document.addEventListener('firebase-ready', async () => {
   const { user } = window.__firebase || {};
 
   if (user && el.authInfo) {
-    el.authInfo.textContent = `Conectado • ${user.email || user.uid.slice(0, 8)}`;
+    el.authInfo.textContent =
+      `Conectado • ${user.email || user.uid.slice(0, 8)}`;
   }
 
-  initTransactionsListener((txList) => {
-    state.txs = txList;
-    refreshList();
-  }).catch(err => {
-    console.error(err);
-    alert('Error inicializando datos: ' + (err?.message || err));
-  });
+  try {
+    await initTransactionsListener((txList) => {
+      state.txs = txList;
+      refreshList();
+    });
 
-  hideSplash();
+    hideSplash();
+
+    if (pendingShortcutExpense) {
+      openShortcutExpenseDialog(pendingShortcutExpense);
+    }
+  } catch (err) {
+    console.error(err);
+    hideSplash();
+
+    alert(
+      'Error inicializando datos: ' +
+      (err?.message || err)
+    );
+  }
 });
 
 
@@ -1107,6 +1145,14 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+function normalizeShortcutAmount(value) {
+  return String(value || '')
+    .replace(/EUR/gi, '')
+    .replace(/€/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
 function getShortcutExpenseFromUrl() {
   const params = new URLSearchParams(window.location.search);
 
@@ -1114,7 +1160,9 @@ function getShortcutExpenseFromUrl() {
     return null;
   }
 
-  const amount = (params.get('amount') || '').trim();
+  const amount = normalizeShortcutAmount(
+  params.get('amount')
+);
   const merchant = (params.get('merchant') || '').trim();
   const paymentCard = (params.get('card') || '').trim();
   const date = (params.get('date') || '').trim();
