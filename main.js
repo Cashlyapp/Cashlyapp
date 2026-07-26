@@ -74,6 +74,8 @@ const state = {
 
 window.__state = state;
 
+const APP_VERSION = 'v1.0.0';
+
 const el = {
   // Cabecera / toolbar
   monthLabel:   document.getElementById('currentMonth'),
@@ -137,6 +139,7 @@ const el = {
   authCancel:   document.getElementById('authCancel'),
   toggleMode:   document.getElementById('toggleMode'),
   authInfo:     document.getElementById('authInfo'),
+  appVersion:   document.getElementById('appVersion'),
 
   // Diálogo borrar
   dlgConfirmDelete: document.getElementById('dlgConfirm'),
@@ -149,6 +152,10 @@ const el = {
   btnOpenHistory:  document.getElementById('btnOpenHistory'),
   btnCloseHistory: document.getElementById('btnCloseHistory')
 };
+
+if (el.appVersion) {
+  el.appVersion.textContent = APP_VERSION;
+}
 
 // Animación del logotipo al entrar (vía transición)
 function showLogoWithTransition() {
