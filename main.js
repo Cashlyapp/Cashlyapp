@@ -43,7 +43,10 @@ function showSplash() {
  * @property {number} amountCents       // céntimos
  * @property {string} categoryId
  * @property {string} date              // ISO YYYY-MM-DD
+ * @property {string} [merchant]
+ * @property {string} [paymentCard]
  * @property {string} [note]
+ * @property {'manual'|'apple_pay'|'ocr'|'import'} [source]
  * @property {{freq: 'monthly'|'weekly', endsOn: (string|null)}|null} [recurring]
  */
 
@@ -272,7 +275,7 @@ function renderTxCard(tx) {
 
   const titleDiv = document.createElement('div');
   titleDiv.className = 'title';
-  titleDiv.textContent = tx.note || cat.name;
+  titleDiv.textContent = tx.merchant || tx.note || cat.name;
 
   const subDiv = document.createElement('div');
   subDiv.className = 'sub';
@@ -283,7 +286,14 @@ function renderTxCard(tx) {
 
 
   // categoría + fecha en la línea pequeña
-  subDiv.textContent = `${cat.name} • ${d.toLocaleDateString('es-ES')}`;
+  const subParts = [
+  cat.name,
+  tx.paymentCard,
+  tx.merchant ? tx.note : '',
+  d.toLocaleDateString('es-ES')
+].filter(Boolean);
+
+subDiv.textContent = subParts.join(' • ');
 
   mainDiv.appendChild(titleDiv);
   mainDiv.appendChild(subDiv);
@@ -1093,16 +1103,22 @@ el.fileImport?.addEventListener('change', async (e) => {
       promises.push(
         saveTransaction(
           {
-            type: item.type === 'income' ? 'income' : 'expense',
-            amountCents: item.amountCents,
-            category: item.categoryId || (item.type === 'income' ? 'other_inc' : 'other_exp'),
-            date: typeof item.date === 'string'
-              ? item.date.slice(0, 10)
-              : todayISO(),
-            note: item.note || '',
-            recurringFreq: '',
-            recurringEndsOn: ''
-          },
+  type: item.type === 'income' ? 'income' : 'expense',
+  amountCents: item.amountCents,
+  category:
+    item.categoryId ||
+    (item.type === 'income' ? 'other_inc' : 'other_exp'),
+  date:
+    typeof item.date === 'string'
+      ? item.date.slice(0, 10)
+      : todayISO(),
+  merchant: item.merchant || '',
+  paymentCard: item.paymentCard || '',
+  note: item.note || '',
+  source: item.source || 'import',
+  recurringFreq: '',
+  recurringEndsOn: ''
+},
           null
         )
       );
@@ -1800,14 +1816,19 @@ el.ocrImport?.addEventListener('click', async () => {
     if (!tx) return;
 
     toImport.push({
-      type: tx.type,
-      amountCents: tx.amountCents,
-      category: tx.categoryId || (tx.type === 'income' ? 'other_inc' : 'other_exp'),
-      date: tx.date,
-      note: tx.merchant || '',
-      recurringFreq: '',
-      recurringEndsOn: ''
-    });
+  type: tx.type,
+  amountCents: tx.amountCents,
+  category:
+    tx.categoryId ||
+    (tx.type === 'income' ? 'other_inc' : 'other_exp'),
+  date: tx.date,
+  merchant: tx.merchant || '',
+  paymentCard: '',
+  note: '',
+  source: 'ocr',
+  recurringFreq: '',
+  recurringEndsOn: ''
+});
   });
 
   if (!toImport.length) {
