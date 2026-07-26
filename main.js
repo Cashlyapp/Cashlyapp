@@ -103,6 +103,8 @@ const el = {
   inputAmount:      document.getElementById('amount'),
   inputDate:        document.getElementById('date'),
   selectCategory:   document.getElementById('category'),
+  inputMerchant:    document.getElementById('merchant'),
+  inputPaymentCard: document.getElementById('paymentCard'),
   inputNote:        document.getElementById('note'),
   radioIncome:      document.getElementById('typeIncome'),
   radioExpense:     document.getElementById('typeExpense'),
@@ -787,6 +789,8 @@ if (el.donutCarousel) {
 
 function resetFormForNew() {
   el.form.reset();
+  if (el.inputMerchant) el.inputMerchant.value = '';
+  if (el.inputPaymentCard) el.inputPaymentCard.value = '';
   el.radioIncome.checked = true;
   initCategoryOptions('income'); // 👈 NUEVO: solo categorías de ingresos
   el.inputDate.value = todayISO();
@@ -795,6 +799,7 @@ function resetFormForNew() {
   el.dlgTitle.textContent = 'Nuevo movimiento';
   el.dlgTx.dataset.editingId = '';
   if (el.btnDeleteTx) el.btnDeleteTx.hidden = true;
+  el.dlgTx.dataset.source = 'manual';
 }
 
 function setDefaultRecurringEndIfNeeded() {
@@ -836,6 +841,14 @@ function openEditDialog(tx) {
   el.selectCategory.value = tx.categoryId || (tx.type === 'income' ? 'other_inc' : 'other_exp');
   el.inputNote.value = tx.note || '';
 
+  if (el.inputMerchant) {
+  el.inputMerchant.value = tx.merchant || '';
+}
+
+if (el.inputPaymentCard) {
+  el.inputPaymentCard.value = tx.paymentCard || '';
+}
+
   if (tx.recurring && tx.recurring.freq) {
     el.recurringFreq.value = tx.recurring.freq;
     el.recurringEndsOn.value = tx.recurring.endsOn || '';
@@ -847,6 +860,8 @@ function openEditDialog(tx) {
   el.dlgTitle.textContent = 'Editar movimiento';
   el.dlgTx.dataset.editingId = tx.id;
   if (el.btnDeleteTx) el.btnDeleteTx.hidden = false;
+
+  el.dlgTx.dataset.source = tx.source || 'manual';
 
   el.dlgTx.showModal();
 }
@@ -935,15 +950,19 @@ el.form?.addEventListener('submit', async (e) => {
   }
 
   const payload = {
-    type,
-    amountCents,
-    category: raw.category || (type === 'income' ? 'other_inc' : 'other_exp'),
-    date: raw.date,
-    note: raw.note?.trim() || '',
-    recurringFreq,
-    recurringEndsOn
-  };
-
+  type,
+  amountCents,
+  category: raw.category || (
+    type === 'income' ? 'other_inc' : 'other_exp'
+  ),
+  date: raw.date,
+  merchant: raw.merchant?.trim() || '',
+  paymentCard: raw.paymentCard?.trim() || '',
+  note: raw.note?.trim() || '',
+  source: el.dlgTx.dataset.source || 'manual',
+  recurringFreq,
+  recurringEndsOn
+};
   if (!isTransactionsReady()) {
     alert('Firebase aún no está listo. Espera un momento y reintenta.');
     return;
