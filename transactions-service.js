@@ -128,43 +128,52 @@ export async function saveTransaction(formData, editingId) {
   } = _fs;
 
   const baseTx = {
-    type: formData.type,
-    amountCents: formData.amountCents,
-    categoryId: formData.category,
-    date: formData.date, // string YYYY-MM-DD
-    note: formData.note || '',
-    recurring: formData.recurringFreq
-      ? {
-          freq: formData.recurringFreq,
-          endsOn: formData.recurringEndsOn || null
-        }
-      : null,
-  };
+  type: formData.type,
+  amountCents: formData.amountCents,
+  categoryId: formData.category,
+  date: formData.date,
+  merchant: formData.merchant || '',
+  paymentCard: formData.paymentCard || '',
+  note: formData.note || '',
+  source: formData.source || 'manual',
+  recurring: formData.recurringFreq
+    ? {
+        freq: formData.recurringFreq,
+        endsOn: formData.recurringEndsOn || null
+      }
+    : null,
+};
 
   // 1) EDICIÓN: solo actualiza el documento, sin tocar cuotas futuras
   if (editingId) {
     const txRef = doc(_db, 'users', _user.uid, 'transactions', editingId);
     await updateDoc(txRef, {
-      type: baseTx.type,
-      amountCents: baseTx.amountCents,
-      categoryId: baseTx.categoryId,
-      date: baseTx.date,
-      note: baseTx.note,
-      recurring: baseTx.recurring,
-    });
+  type: baseTx.type,
+  amountCents: baseTx.amountCents,
+  categoryId: baseTx.categoryId,
+  date: baseTx.date,
+  merchant: baseTx.merchant,
+  paymentCard: baseTx.paymentCard,
+  note: baseTx.note,
+  source: baseTx.source,
+  recurring: baseTx.recurring,
+});
     return;
   }
 
   // 2) ALTA: creamos la transacción "base"
   await addDoc(_col, {
-    type: baseTx.type,
-    amountCents: baseTx.amountCents,
-    categoryId: baseTx.categoryId,
-    date: baseTx.date,
-    note: baseTx.note,
-    recurring: baseTx.recurring,
-    createdAt: serverTimestamp()
-  });
+  type: baseTx.type,
+  amountCents: baseTx.amountCents,
+  categoryId: baseTx.categoryId,
+  date: baseTx.date,
+  merchant: baseTx.merchant,
+  paymentCard: baseTx.paymentCard,
+  note: baseTx.note,
+  source: baseTx.source,
+  recurring: baseTx.recurring,
+  createdAt: serverTimestamp()
+});
 
   // 3) Si es recurrente mensual → generamos futuras cuotas
   if (baseTx.recurring && baseTx.recurring.freq === 'monthly') {
