@@ -1107,6 +1107,166 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+function getShortcutExpenseFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('newExpense') !== '1') {
+    return null;
+  }
+
+  const amount = (params.get('amount') || '').trim();
+  const merchant = (params.get('merchant') || '').trim();
+  const paymentCard = (params.get('card') || '').trim();
+  const date = (params.get('date') || '').trim();
+
+  return {
+    amount: amount.slice(0, 30),
+    merchant: merchant.slice(0, 120),
+    paymentCard: paymentCard.slice(0, 80),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? date
+      : todayISO()
+  };
+}
+
+function normalizeMerchantName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function suggestExpenseCategory(merchant) {
+  const normalized = normalizeMerchantName(merchant);
+
+  const mappings = [
+    {
+      category: 'groceries',
+      words: [
+        'mercadona',
+        'carrefour',
+        'lidl',
+        'aldi',
+        'eroski',
+        'alcampo',
+        'supermercado'
+      ]
+    },
+    {
+      category: 'restaurants',
+      words: [
+        'restaurante',
+        'restaurant',
+        'cafeteria',
+        'cafe',
+        'mcdonald',
+        'burger king',
+        'telepizza',
+        'glovo',
+        'uber eats',
+        'just eat'
+      ]
+    },
+    {
+      category: 'transport',
+      words: [
+        'repsol',
+        'cepsa',
+        'shell',
+        'renfe',
+        'iryo',
+        'ouigo',
+        'uber',
+        'cabify',
+        'parking'
+      ]
+    },
+    {
+      category: 'shopping',
+      words: [
+        'amazon',
+        'zara',
+        'pull&bear',
+        'bershka',
+        'primark',
+        'ikea',
+        'decathlon',
+        'mediamarkt'
+      ]
+    },
+    {
+      category: 'subscriptions',
+      words: [
+        'netflix',
+        'spotify',
+        'apple.com/bill',
+        'amazon prime',
+        'youtube',
+        'disney'
+      ]
+    }
+  ];
+
+  const match = mappings.find(group =>
+    group.words.some(word => normalized.includes(word))
+  );
+
+  return match?.category || 'other_exp';
+}
+
+function openShortcutExpenseDialog(expense) {
+  if (!expense || !el.dlgTx || !el.form) return;
+
+  resetFormForNew();
+
+  el.radioExpense.checked = true;
+  el.radioIncome.checked = false;
+
+  initCategoryOptions('expense');
+
+  el.inputAmount.value = expense.amount;
+  el.inputDate.value = expense.date;
+  el.inputMerchant.value = expense.merchant;
+  el.inputPaymentCard.value = expense.paymentCard;
+  el.inputNote.value = '';
+
+  const suggestedCategory =
+    suggestExpenseCategory(expense.merchant);
+
+  const categoryExists = Array.from(
+    el.selectCategory.options
+  ).some(option => option.value === suggestedCategory);
+
+  el.selectCategory.value = categoryExists
+    ? suggestedCategory
+    : 'other_exp';
+
+  el.recurringFreq.value = '';
+  el.recurringEndsOn.value = '';
+
+  el.dlgTitle.textContent = 'Revisar gasto';
+  el.dlgTx.dataset.editingId = '';
+  el.dlgTx.dataset.source = 'apple_pay';
+
+  if (el.btnDeleteTx) {
+    el.btnDeleteTx.hidden = true;
+  }
+
+  if (el.btnCancelTx) {
+    el.btnCancelTx.textContent = 'Descartar';
+  }
+
+  el.dlgTx.showModal();
+
+  // Elimina importe y comercio de la barra de direcciones.
+  window.history.replaceState(
+    {},
+    document.title,
+    window.location.pathname
+  );
+}
+
 // =============================
 // Limpieza avanzada de transacciones por rango de fechas
 // =============================
