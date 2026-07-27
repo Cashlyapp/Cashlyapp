@@ -1415,10 +1415,9 @@ function renderMerchantSuggestions() {
 window.getMerchantSuggestions = getMerchantSuggestions;
 window.renderMerchantSuggestions = renderMerchantSuggestions;
 
-el.inputMerchant?.addEventListener(
-  'input',
-  renderMerchantSuggestions
-);
+el.inputMerchant?.addEventListener('input', () => {
+  renderMerchantSuggestions();
+});
 
 el.inputMerchant?.addEventListener('blur', () => {
   setTimeout(() => {

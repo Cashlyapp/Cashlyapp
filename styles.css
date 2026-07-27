@@ -466,8 +466,17 @@ main{
 .sheet form{padding:14px}
 .sheet h3{margin:6px 2px 12px}
 .sheet .field{display:flex; flex-direction:column; gap:6px; margin:8px 0}
-.sheet .field input, .sheet .field select{
-  background:#0d1324; border:1px solid var(--ring); color:var(--text); padding:10px; border-radius:10px;
+.sheet .field input,
+.sheet .field select,
+.sheet .field textarea {
+  background:#0d1324;
+  border:1px solid var(--ring);
+  color:var(--text);
+  padding:10px;
+  border-radius:10px;
+
+  font-size:16px;
+  -webkit-text-size-adjust:100%;
 }
 .subfield{display:flex; gap:8px; align-items:center; margin-top:6px}
 .segmented{display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--ring); border-radius:12px; overflow:hidden; margin:8px 0 12px}
@@ -626,5 +635,13 @@ main{
   100% {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size:16px !important;
   }
 }
