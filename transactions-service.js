@@ -14,6 +14,23 @@ function toLocalISODate(d) {
 }
 
 /**
+ * Normaliza el nombre de un comercio para utilizarlo como ID de documento.
+ */
+function normalizeMerchantKey(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
  * @typedef {Object} InternalTx
  * @property {string} id
  * @property {'income'|'expense'} type
@@ -124,43 +141,99 @@ export async function saveTransaction(formData, editingId) {
     addDoc,
     serverTimestamp,
     doc,
-    updateDoc,
     query,
     where,
-    getDocs
+    getDocs,
+    runTransaction
   } = _fs;
 
   const baseTx = {
-  type: formData.type,
-  amountCents: formData.amountCents,
-  categoryId: formData.category,
-  date: formData.date,
-  merchant: formData.merchant || '',
-  paymentCard: formData.paymentCard || '',
-  note: formData.note || '',
-  source: formData.source || 'manual',
-  recurring: formData.recurringFreq
-    ? {
-        freq: formData.recurringFreq,
-        endsOn: formData.recurringEndsOn || null
-      }
-    : null,
-};
+    type: formData.type,
+    amountCents: formData.amountCents,
+    categoryId: formData.category,
+    date: formData.date,
+    merchant: formData.merchant || '',
+    paymentCard: formData.paymentCard || '',
+    note: formData.note || '',
+    source: formData.source || 'manual',
+    recurring: formData.recurringFreq
+      ? {
+          freq: formData.recurringFreq,
+          endsOn: formData.recurringEndsOn || null
+        }
+      : null,
+  };
 
-  // 1) EDICIÓN: solo actualiza el documento, sin tocar cuotas futuras
+  // 1) EDICIÓN: actualiza el documento y aprende el comercio si procede
   if (editingId) {
-    const txRef = doc(_db, 'users', _user.uid, 'transactions', editingId);
-    await updateDoc(txRef, {
-  type: baseTx.type,
-  amountCents: baseTx.amountCents,
-  categoryId: baseTx.categoryId,
-  date: baseTx.date,
-  merchant: baseTx.merchant,
-  paymentCard: baseTx.paymentCard,
-  note: baseTx.note,
-  source: baseTx.source,
-  recurring: baseTx.recurring,
-});
+    const txRef = doc(
+      _db,
+      'users',
+      _user.uid,
+      'transactions',
+      editingId
+    );
+
+    const merchantKey = normalizeMerchantKey(baseTx.merchant);
+
+    await runTransaction(_db, async (transaction) => {
+      const currentTxSnapshot = await transaction.get(txRef);
+
+      if (!currentTxSnapshot.exists()) {
+        throw new Error('La transacción que intentas editar ya no existe');
+      }
+
+      const currentTx = currentTxSnapshot.data() || {};
+
+      const wasUncategorized =
+        currentTx.type === 'expense' &&
+        currentTx.categoryId === 'other_exp';
+
+      const hasNewCategory =
+        baseTx.type === 'expense' &&
+        baseTx.categoryId &&
+        baseTx.categoryId !== 'other_exp';
+
+      const canLearnMerchant =
+        wasUncategorized &&
+        hasNewCategory &&
+        merchantKey;
+
+      if (canLearnMerchant) {
+        const ruleRef = doc(
+          _db,
+          'users',
+          _user.uid,
+          'merchantRules',
+          merchantKey
+        );
+
+        const existingRuleSnapshot = await transaction.get(ruleRef);
+
+        if (!existingRuleSnapshot.exists()) {
+          transaction.set(ruleRef, {
+            merchantKey,
+            displayName: baseTx.merchant,
+            categoryId: baseTx.categoryId,
+            source: 'manual',
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      transaction.update(txRef, {
+        type: baseTx.type,
+        amountCents: baseTx.amountCents,
+        categoryId: baseTx.categoryId,
+        date: baseTx.date,
+        merchant: baseTx.merchant,
+        paymentCard: baseTx.paymentCard,
+        note: baseTx.note,
+        source: baseTx.source,
+        recurring: baseTx.recurring
+      });
+    });
+
     return;
   }
 

@@ -109,6 +109,7 @@ const el = {
   inputDate:        document.getElementById('date'),
   selectCategory:   document.getElementById('category'),
   inputMerchant:    document.getElementById('merchant'),
+  merchantSuggestions: document.getElementById('merchantSuggestions'),
   inputPaymentCard: document.getElementById('paymentCard'),
   inputNote:        document.getElementById('note'),
   radioIncome:      document.getElementById('typeIncome'),
@@ -202,10 +203,7 @@ function changeMonth(delta) {
   refreshList();
 }
 
-// Poblar categorías del <select>
-// Poblar categorías del <select>
 function initCategoryOptions(forType) {
-  // Si no se pasa tipo, usamos el radio actual
   const txType = forType || (el.radioIncome.checked ? 'income' : 'expense');
 
   el.selectCategory.innerHTML = '';
@@ -221,6 +219,11 @@ function initCategoryOptions(forType) {
     });
 
   el.selectCategory.appendChild(frag);
+
+  // Categoría por defecto
+  if (txType === 'expense') {
+    el.selectCategory.value = 'other_exp';
+  }
 }
 
 
@@ -1286,6 +1289,158 @@ function suggestExpenseCategory(merchant) {
   return match?.category || 'other_exp';
 }
 
+function getMerchantSuggestions(searchText, maxResults = 6) {
+  const search = normalizeMerchantName(searchText);
+
+  if (search.length < 2) {
+    return [];
+  }
+
+  const merchants = new Map();
+
+  for (const tx of state.txs) {
+    if (tx.type !== 'expense') continue;
+
+    const merchant = String(tx.merchant || '').trim();
+    if (!merchant) continue;
+
+    const normalizedMerchant = normalizeMerchantName(merchant);
+
+    if (!normalizedMerchant.includes(search)) continue;
+
+    const existing = merchants.get(normalizedMerchant);
+
+    if (existing) {
+      existing.count += 1;
+
+      // Conservamos la categoría más reciente encontrada.
+      if (tx.categoryId) {
+        existing.categoryId = tx.categoryId;
+      }
+    } else {
+      merchants.set(normalizedMerchant, {
+        merchant,
+        categoryId: tx.categoryId || 'other_exp',
+        count: 1
+      });
+    }
+  }
+
+  return Array.from(merchants.values())
+    .sort((a, b) => {
+      const aStarts = normalizeMerchantName(a.merchant).startsWith(search);
+      const bStarts = normalizeMerchantName(b.merchant).startsWith(search);
+
+      if (aStarts !== bStarts) {
+        return aStarts ? -1 : 1;
+      }
+
+      return b.count - a.count;
+    })
+    .slice(0, maxResults);
+}
+
+function hideMerchantSuggestions() {
+  if (!el.merchantSuggestions) return;
+
+  el.merchantSuggestions.hidden = true;
+  el.merchantSuggestions.innerHTML = '';
+}
+
+function renderMerchantSuggestions() {
+  if (
+    !el.inputMerchant ||
+    !el.merchantSuggestions ||
+    !el.radioExpense.checked
+  ) {
+    hideMerchantSuggestions();
+    return;
+  }
+
+  const suggestions = getMerchantSuggestions(
+    el.inputMerchant.value
+  );
+
+  el.merchantSuggestions.innerHTML = '';
+
+  if (!suggestions.length) {
+    hideMerchantSuggestions();
+    return;
+  }
+
+  for (const suggestion of suggestions) {
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.className = 'merchant-suggestion';
+
+    const category =
+      CATEGORY_BY_ID[suggestion.categoryId];
+
+    button.innerHTML = `
+      <span>${suggestion.merchant}</span>
+      <small>
+        ${category?.emoji || ''} ${category?.name || ''}
+      </small>
+    `;
+
+    button.addEventListener('mousedown', event => {
+      event.preventDefault();
+    });
+
+    button.addEventListener('click', () => {
+      el.inputMerchant.value = suggestion.merchant;
+
+      const categoryExists = Array.from(
+        el.selectCategory.options
+      ).some(option =>
+        option.value === suggestion.categoryId
+      );
+
+      if (categoryExists) {
+        el.selectCategory.value =
+          suggestion.categoryId;
+      }
+
+      hideMerchantSuggestions();
+      el.selectCategory.focus();
+    });
+
+    el.merchantSuggestions.appendChild(button);
+  }
+
+  el.merchantSuggestions.hidden = false;
+}
+
+window.getMerchantSuggestions = getMerchantSuggestions;
+window.renderMerchantSuggestions = renderMerchantSuggestions;
+
+el.inputMerchant?.addEventListener(
+  'input',
+  renderMerchantSuggestions
+);
+
+el.inputMerchant?.addEventListener('blur', () => {
+  setTimeout(() => {
+    hideMerchantSuggestions();
+  }, 100);
+
+  applyMerchantCategorySuggestion();
+});
+
+el.inputMerchant?.addEventListener(
+  'keydown',
+  event => {
+    if (event.key !== 'Enter') return;
+
+    event.preventDefault();
+
+    applyMerchantCategorySuggestion();
+    hideMerchantSuggestions();
+    el.selectCategory?.focus();
+  }
+);
+
 function openShortcutExpenseDialog(expense) {
   if (!expense || !el.dlgTx || !el.form) return;
 
@@ -1747,6 +1902,27 @@ el.inputDate?.addEventListener('change', () => {
   setDefaultRecurringEndIfNeeded();
 });
 
+function applyMerchantCategorySuggestion() {
+  if (!el.radioExpense.checked) return;
+
+  const merchant = el.inputMerchant?.value?.trim();
+
+  if (!merchant) {
+    el.selectCategory.value = 'other_exp';
+    return;
+  }
+
+  const suggestedCategory = suggestExpenseCategory(merchant);
+
+  const availableCategories = Array.from(el.selectCategory.options)
+    .map(option => option.value);
+
+  if (availableCategories.includes(suggestedCategory)) {
+    el.selectCategory.value = suggestedCategory;
+  } else {
+    el.selectCategory.value = 'other_exp';
+  }
+}
 
 el.ocrFiles?.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files || []);

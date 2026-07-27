@@ -214,19 +214,22 @@
     </label>
 
     <label class="field">
-      <span>Categoría</span>
-      <select id="category" name="category" required></select>
-    </label>
-
-    <label class="field">
   <span>Comercio</span>
+
   <input
     type="text"
     id="merchant"
     name="merchant"
     maxlength="120"
     placeholder="Por ejemplo, Mercadona"
+    autocomplete="off"
   >
+
+  <div
+    id="merchantSuggestions"
+    class="merchant-suggestions"
+    hidden>
+  </div>
 </label>
 
 <label class="field">
@@ -239,6 +242,13 @@
     placeholder="Por ejemplo, Visa"
   >
 </label>
+
+    <label class="field">
+      <span>Categoría</span>
+      <select id="category" name="category" required></select>
+    </label>    
+
+
 
     <label class="field">
       <span>Fecha</span>

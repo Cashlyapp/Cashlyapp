@@ -11,6 +11,7 @@ export const CATEGORIES = [
   { id: 'other_inc',    type: 'income',  name: 'Otros ingresos', emoji: '➕' },
 
   // GASTOS
+  { id: 'other_exp',     type: 'expense', name: 'Otros gastos',   emoji: '➖' },
   { id: 'groceries',     type: 'expense', name: 'Supermercado',   emoji: '🛒' },
   { id: 'rent',          type: 'expense', name: 'Alquiler',       emoji: '🏠' },
   { id: 'bills',         type: 'expense', name: 'Facturas',       emoji: '💡' },
@@ -20,8 +21,7 @@ export const CATEGORIES = [
   { id: 'selfcare',      type: 'expense', name: 'SelfCare',       emoji: '💆🏽' },
   { id: 'shopping',      type: 'expense', name: 'Compras',        emoji: '🛍️' },
   { id: 'wedding',       type: 'expense', name: 'Boda',           emoji: '👰🏻‍♀️' },
-  { id: 'subscriptions', type: 'expense', name: 'Suscripciones',  emoji: '👨🏽‍💻' },
-  { id: 'other_exp',     type: 'expense', name: 'Otros gastos',   emoji: '➖' }
+  { id: 'subscriptions', type: 'expense', name: 'Suscripciones',  emoji: '👨🏽‍💻' }
 ];
 
 export const CATEGORY_BY_ID = Object.fromEntries(

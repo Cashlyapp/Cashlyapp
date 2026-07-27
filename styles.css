@@ -517,6 +517,56 @@ main{
   transform: scale(1) translateY(0);
 }
 
+.field {
+  position: relative;
+}
+
+.merchant-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% - 2px);
+  left: 0;
+  right: 0;
+
+  overflow: hidden;
+
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+}
+
+.merchant-suggestion {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  padding: 10px 12px;
+
+  color: #f8fafc;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #1e293b;
+
+  text-align: left;
+  cursor: pointer;
+}
+
+.merchant-suggestion:last-child {
+  border-bottom: 0;
+}
+
+.merchant-suggestion:hover,
+.merchant-suggestion:focus {
+  background: #1e293b;
+}
+
+.merchant-suggestion small {
+  color: #94a3b8;
+  white-space: nowrap;
+}
 
 
 @keyframes brandLogoIntro {
