@@ -8,6 +8,50 @@ admin.initializeApp();
 const db = admin.firestore();
 const shortcutSecret = defineSecret("CASHLY_SHORTCUT_SECRET");
 
+const CATEGORY_RULES = {
+  groceries: [
+    "mercadona",
+    "carrefour",
+    "lidl",
+    "aldi",
+    "dia",
+    "eroski",
+    "alcampo",
+  ],
+  shopping: [
+    "amazon",
+    "zara",
+    "ikea",
+    "primark",
+    "h&m",
+    "el corte ingles",
+  ],
+  transport: [
+    "repsol",
+    "cepsa",
+    "bp",
+    "shell",
+    "renfe",
+    "uber",
+    "cabify",
+  ],
+  restaurants: [
+    "mcdonald",
+    "burger king",
+    "kfc",
+    "telepizza",
+    "dominos",
+    "starbucks",
+  ],
+  leisure: [
+    "netflix",
+    "spotify",
+    "steam",
+    "playstation",
+    "cine",
+  ],
+};
+
 /**
  * Normaliza un valor de texto.
  * @param {*} value Valor recibido.
@@ -15,6 +59,18 @@ const shortcutSecret = defineSecret("CASHLY_SHORTCUT_SECRET");
  */
 function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Normaliza texto para comparaciones, eliminando tildes y mayúsculas.
+ * @param {string} value Texto recibido.
+ * @return {string} Texto normalizado.
+ */
+function normalizeSearchText(value) {
+  return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
 }
 
 /**
@@ -28,6 +84,28 @@ function isValidDate(value) {
   }
 
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/**
+ * Deduce una categoría de gasto a partir del nombre del comercio.
+ * @param {string} merchant Nombre del comercio.
+ * @return {string} Identificador de la categoría sugerida.
+ */
+function guessCategory(merchant) {
+  const normalizedMerchant = normalizeSearchText(merchant);
+
+  for (const [categoryId, merchantNames] of
+    Object.entries(CATEGORY_RULES)) {
+    const matchesCategory = merchantNames.some(
+        (merchantName) => normalizedMerchant.includes(merchantName),
+    );
+
+    if (matchesCategory) {
+      return categoryId;
+    }
+  }
+
+  return "other_exp";
 }
 
 exports.addTransaction = onRequest(
@@ -84,12 +162,7 @@ exports.addTransaction = onRequest(
           });
         }
 
-        if (!categoryId) {
-          return res.status(400).json({
-            ok: false,
-            error: "missing_category",
-          });
-        }
+        const finalCategoryId = categoryId || guessCategory(merchant);
 
         if (!isValidDate(date)) {
           return res.status(400).json({
@@ -117,7 +190,7 @@ exports.addTransaction = onRequest(
         await transactionRef.set({
           type: "expense",
           amountCents,
-          categoryId,
+          categoryId: finalCategoryId,
           date,
           merchant,
           paymentCard,
@@ -125,7 +198,8 @@ exports.addTransaction = onRequest(
           source: "apple_pay_shortcut",
           recurring: null,
           shortcutRequestId: requestId,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt:
+            admin.firestore.FieldValue.serverTimestamp(),
         });
 
         return res.status(201).json({
