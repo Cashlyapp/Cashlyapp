@@ -7,6 +7,7 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const shortcutSecret = defineSecret("CASHLY_SHORTCUT_SECRET");
+const cashlyUserUid = defineSecret("CASHLY_USER_UID");
 
 const DEFAULT_CATEGORY_RULES = {
   groceries: [
@@ -528,7 +529,7 @@ async function guessCategory(userId, merchant) {
 
 exports.addTransaction = onRequest(
     {
-      secrets: [shortcutSecret],
+      secrets: [shortcutSecret, cashlyUserUid],
       region: "europe-west1",
     },
     async (req, res) => {
@@ -554,7 +555,7 @@ exports.addTransaction = onRequest(
 
         const body = req.body || {};
 
-        const userId = normalizeText(body.userId);
+        const userId = normalizeText(cashlyUserUid.value());
         const merchant = normalizeText(body.merchant);
         const paymentCard = normalizeText(body.paymentCard);
         const categoryId = normalizeText(body.categoryId);
