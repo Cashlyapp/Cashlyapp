@@ -5,10 +5,13 @@
 
 export const CATEGORIES = [
   // INGRESOS
-  { id: 'salary',       type: 'income',  name: 'Nómina',         emoji: '💼' },
-  { id: 'extra_inc',    type: 'income',  name: 'Extras',         emoji: '💸' },
-  { id: 'refunds_inc',  type: 'income',  name: 'Devoluciones',   emoji: '↩️' },
-  { id: 'other_inc',    type: 'income',  name: 'Otros ingresos', emoji: '➕' },
+  { id: 'salary',          type: 'income', name: 'Nómina',                emoji: '💼' },
+  { id: 'transfers_inc',   type: 'income', name: 'Bizum / Transferencias', emoji: '💸' },
+  { id: 'sales_inc',       type: 'income', name: 'Ventas',                 emoji: '🏷️' },
+  { id: 'refunds_inc',     type: 'income', name: 'Devoluciones',           emoji: '↩️' },
+  { id: 'gifts_inc',       type: 'income', name: 'Regalos',                emoji: '🎁' },
+  { id: 'investments_inc', type: 'income', name: 'Inversiones',            emoji: '📈' },
+  { id: 'other_inc',       type: 'income', name: 'Otros ingresos',         emoji: '➕' },
 
   // GASTOS
   { id: 'other_exp',     type: 'expense', name: 'Otros gastos',   emoji: '➖' },

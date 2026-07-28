@@ -1299,7 +1299,10 @@ function getMerchantSuggestions(searchText, maxResults = 6) {
   const merchants = new Map();
 
   for (const tx of state.txs) {
-    if (tx.type !== 'expense') continue;
+    const currentType =
+      el.radioIncome.checked ? 'income' : 'expense';
+
+    if (tx.type !== currentType) continue;
 
     const merchant = String(tx.merchant || '').trim();
     if (!merchant) continue;
@@ -1320,7 +1323,9 @@ function getMerchantSuggestions(searchText, maxResults = 6) {
     } else {
       merchants.set(normalizedMerchant, {
         merchant,
-        categoryId: tx.categoryId || 'other_exp',
+        categoryId:
+          tx.categoryId ||
+          (tx.type === 'income' ? 'other_inc' : 'other_exp'),
         count: 1
       });
     }
@@ -1350,8 +1355,7 @@ function hideMerchantSuggestions() {
 function renderMerchantSuggestions() {
   if (
     !el.inputMerchant ||
-    !el.merchantSuggestions ||
-    !el.radioExpense.checked
+    !el.merchantSuggestions
   ) {
     hideMerchantSuggestions();
     return;

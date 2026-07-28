@@ -326,6 +326,60 @@ const DEFAULT_CATEGORY_RULES = {
   ],
 };
 
+const DEFAULT_INCOME_CATEGORY_RULES = {
+  salary: [
+    "nomina",
+    "nómina",
+    "salario",
+    "payroll",
+    "babel",
+    "bosonit",
+  ],
+
+  transfers_inc: [
+    "bizum",
+    "transferencia",
+    "traspaso recibido",
+    "envio de dinero",
+    "envío de dinero",
+  ],
+
+  sales_inc: [
+    "wallapop",
+    "vinted",
+    "venta",
+    "segunda mano",
+    "ebay",
+  ],
+
+  refunds_inc: [
+    "devolucion",
+    "devolución",
+    "reembolso",
+    "refund",
+    "amazon refund",
+    "devolucion amazon",
+    "devolución amazon",
+  ],
+
+  gifts_inc: [
+    "regalo",
+    "cumpleaños",
+    "boda",
+    "espiga",
+  ],
+
+  investments_inc: [
+    "dividendo",
+    "dividendos",
+    "intereses",
+    "rentabilidad",
+    "broker",
+    "trade republic",
+    "degiro",
+  ],
+};
+
 const MERCHANT_RULES_CACHE_MS = 10 * 60 * 1000;
 
 let cachedCategoryRules = null;
@@ -434,11 +488,14 @@ async function getCategoryRules() {
  *
  * @param {string} userId Identificador del usuario.
  * @param {string} merchant Nombre del comercio.
+ * @param {string} type Tipo de transacción.
  * @return {Promise<Object|null>} Regla encontrada o null.
  */
-async function getUserMerchantRule(userId, merchant) {
+async function getUserMerchantRule(userId, merchant, type) {
   const normalizedUserId = normalizeText(userId);
   const merchantKey = normalizeSearchText(merchant);
+  const normalizedType = type === "income" ? "income" : "expense";
+  const ruleKey = `${normalizedType}_${merchantKey}`;
 
   if (!normalizedUserId || !merchantKey) {
     return null;
@@ -449,10 +506,10 @@ async function getUserMerchantRule(userId, merchant) {
         .collection("users")
         .doc(normalizedUserId)
         .collection("merchantRules")
-        .doc(merchantKey)
+        .doc(ruleKey)
         .get();
 
-    if (!ruleDocument.exists) {
+    if (!ruleDocument.exists()) {
       return null;
     }
 
@@ -465,13 +522,15 @@ async function getUserMerchantRule(userId, merchant) {
 
     return {
       merchantKey,
+      ruleKey,
       displayName: normalizeText(rule.displayName),
       categoryId,
+      type: normalizeText(rule.type) || normalizedType,
       source: normalizeText(rule.source),
     };
   } catch (error) {
     console.error(
-        `Error loading merchant rule for ${merchantKey}`,
+        `Error loading merchant rule for ${ruleKey}`,
         error,
     );
 
@@ -496,27 +555,41 @@ function isValidDate(value) {
  * Deduce una categoría de gasto a partir del nombre del comercio.
  * @param {string} userId Identificador del usuario.
  * @param {string} merchant Nombre del comercio.
+ * @param {string} type Tipo de transacción ("income" o "expense").
  * @return {Promise<string>} Identificador de la categoría sugerida.
  */
-async function guessCategory(userId, merchant) {
-  const userRule = await getUserMerchantRule(userId, merchant);
+async function guessCategory(userId, merchant, type) {
+  const normalizedType = type === "income" ? "income" : "expense";
+
+  const userRule = await getUserMerchantRule(
+      userId,
+      merchant,
+      normalizedType,
+  );
 
   if (userRule) {
     return userRule.categoryId;
   }
 
   const normalizedMerchant = normalizeSearchText(merchant);
-  const categoryRules = await getCategoryRules();
-  const rules = Object.entries(categoryRules);
 
-  for (const [categoryId, merchantNames] of rules) {
+  const categoryRules =
+    normalizedType === "income" ?
+      DEFAULT_INCOME_CATEGORY_RULES :
+      await getCategoryRules();
+
+  for (const [categoryId, merchantNames] of
+    Object.entries(categoryRules)) {
     if (!Array.isArray(merchantNames)) {
       continue;
     }
 
     const matchesCategory = merchantNames.some(
         (merchantName) =>
-          merchantMatchesAlias(normalizedMerchant, merchantName),
+          merchantMatchesAlias(
+              normalizedMerchant,
+              merchantName,
+          ),
     );
 
     if (matchesCategory) {
@@ -524,7 +597,9 @@ async function guessCategory(userId, merchant) {
     }
   }
 
-  return "other_exp";
+  return normalizedType === "income" ?
+    "other_inc" :
+    "other_exp";
 }
 
 exports.addTransaction = onRequest(
@@ -591,9 +666,11 @@ exports.addTransaction = onRequest(
 
         const finalCategoryId =
           categoryId ||
-          (type === "expense" ?
-            await guessCategory(userId, merchant) :
-            "other_inc");
+          await guessCategory(
+              userId,
+              merchant,
+              type,
+          );
 
         if (!isValidDate(date)) {
           return res.status(400).json({

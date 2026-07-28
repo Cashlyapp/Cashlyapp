@@ -185,14 +185,23 @@ export async function saveTransaction(formData, editingId) {
 
       const currentTx = currentTxSnapshot.data() || {};
 
+      const currentDefaultCategory =
+        currentTx.type === 'income'
+          ? 'other_inc'
+          : 'other_exp';
+
+      const newDefaultCategory =
+        baseTx.type === 'income'
+          ? 'other_inc'
+          : 'other_exp';
+
       const wasUncategorized =
-        currentTx.type === 'expense' &&
-        currentTx.categoryId === 'other_exp';
+        currentTx.type === baseTx.type &&
+        currentTx.categoryId === currentDefaultCategory;
 
       const hasNewCategory =
-        baseTx.type === 'expense' &&
         baseTx.categoryId &&
-        baseTx.categoryId !== 'other_exp';
+        baseTx.categoryId !== newDefaultCategory;
 
       const canLearnMerchant =
         wasUncategorized &&
@@ -200,19 +209,23 @@ export async function saveTransaction(formData, editingId) {
         merchantKey;
 
       if (canLearnMerchant) {
+        const ruleKey = `${baseTx.type}_${merchantKey}`;
+
         const ruleRef = doc(
           _db,
           'users',
           _user.uid,
           'merchantRules',
-          merchantKey
+          ruleKey
         );
 
         const existingRuleSnapshot = await transaction.get(ruleRef);
 
         if (!existingRuleSnapshot.exists()) {
           transaction.set(ruleRef, {
+            ruleKey,
             merchantKey,
+            type: baseTx.type,
             displayName: baseTx.merchant,
             categoryId: baseTx.categoryId,
             source: 'manual',
