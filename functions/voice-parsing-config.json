@@ -1,0 +1,56 @@
+{
+  "document": "voiceParsing",
+  "merge": false,
+  "data": {
+    "expenseKeywords": [
+      "gasto",
+      "he pagado",
+      "he gastado",
+      "me he gastado",
+      "me he dejado",
+      "he comprado",
+      "pague",
+      "pagué",
+      "compra"
+    ],
+    "incomeKeywords": [
+      "ingreso",
+      "he ingresado",
+      "he ingresado un",
+      "he recibido",
+      "me han ingresado",
+      "me han pagado",
+      "me ha pagado",
+      "me han enviado",
+      "me ha enviado",
+      "me han hecho un bizum",
+      "me ha hecho un bizum",
+      "he cobrado",
+      "devolucion",
+      "devolución",
+      "reembolso"
+    ],
+    "expenseMerchantConnectors": [
+      " en ",
+      " a ",
+      " para "
+    ],
+    "incomeMerchantConnectors": [
+      " de ",
+      " por ",
+      " desde "
+    ],
+    "currencyWords": [
+      "euros",
+      "euro",
+      "eur"
+    ],
+    "fillerWords": [
+      "un gasto de",
+      "una compra de",
+      "un ingreso de",
+      "por valor de",
+      "la cantidad de"
+    ]
+  }
+}

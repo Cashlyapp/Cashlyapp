@@ -8,6 +8,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const shortcutSecret = defineSecret("CASHLY_SHORTCUT_SECRET");
 const cashlyUserUid = defineSecret("CASHLY_USER_UID");
+const adminSecret = defineSecret("CASHLY_ADMIN_SECRET");
 
 const DEFAULT_CATEGORY_RULES = {
   groceries: [
@@ -380,10 +381,70 @@ const DEFAULT_INCOME_CATEGORY_RULES = {
   ],
 };
 
-const MERCHANT_RULES_CACHE_MS = 10 * 60 * 1000;
+const DEFAULT_VOICE_PARSING_RULES = {
+  expenseKeywords: [
+    "gasto",
+    "he pagado",
+    "he gastado",
+    "me he gastado",
+    "me he dejado",
+    "he comprado",
+    "pague",
+    "pagué",
+    "compra",
+  ],
+
+  incomeKeywords: [
+    "ingreso",
+    "he ingresado",
+    "he ingresado un",
+    "he recibido",
+    "me han ingresado",
+    "me han pagado",
+    "me ha pagado",
+    "me han enviado",
+    "me ha enviado",
+    "me han hecho un bizum",
+    "me ha hecho un bizum",
+    "he cobrado",
+    "devolucion",
+    "devolución",
+    "reembolso",
+  ],
+  expenseMerchantConnectors: [
+    " en ",
+    " a ",
+    " para ",
+  ],
+
+  incomeMerchantConnectors: [
+    " de ",
+    " por ",
+    " desde ",
+  ],
+
+  currencyWords: [
+    "euros",
+    "euro",
+    "eur",
+  ],
+
+  fillerWords: [
+    "un gasto de",
+    "una compra de",
+    "un ingreso de",
+    "por valor de",
+    "la cantidad de",
+  ],
+};
+
+const CONFIG_CACHE_MS = 10 * 60 * 1000;
 
 let cachedCategoryRules = null;
 let categoryRulesLoadedAt = 0;
+
+let cachedVoiceParsingRules = null;
+let voiceParsingRulesLoadedAt = 0;
 
 /**
  * Normaliza un valor de texto.
@@ -445,6 +506,34 @@ function hasValidCategoryRules(value) {
 }
 
 /**
+ * Comprueba si las reglas de interpretación por voz son válidas.
+ *
+ * @param {*} value Reglas recibidas.
+ * @return {boolean} True si contienen una configuración utilizable.
+ */
+function hasValidVoiceParsingRules(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const requiredProperties = [
+    "expenseKeywords",
+    "incomeKeywords",
+    "expenseMerchantConnectors",
+    "incomeMerchantConnectors",
+    "currencyWords",
+  ];
+
+  return requiredProperties.every(
+      (property) =>
+        Array.isArray(value[property]) &&
+        value[property].some(
+            (item) => typeof item === "string" && item.trim(),
+        ),
+  );
+}
+
+/**
  * Obtiene las reglas desde Firestore, usando una caché temporal.
  * @return {Promise<Object>} Reglas de categorización.
  */
@@ -452,7 +541,7 @@ async function getCategoryRules() {
   const now = Date.now();
   const cacheIsValid =
     cachedCategoryRules &&
-    now - categoryRulesLoadedAt < MERCHANT_RULES_CACHE_MS;
+    now - categoryRulesLoadedAt < CONFIG_CACHE_MS;
 
   if (cacheIsValid) {
     return cachedCategoryRules;
@@ -484,6 +573,211 @@ async function getCategoryRules() {
 }
 
 /**
+ * Obtiene las reglas de interpretación por voz desde Firestore.
+ *
+ * @return {Promise<Object>} Reglas de interpretación.
+ */
+async function getVoiceParsingRules() {
+  const now = Date.now();
+
+  const cacheIsValid =
+    cachedVoiceParsingRules &&
+    now - voiceParsingRulesLoadedAt < CONFIG_CACHE_MS;
+
+  if (cacheIsValid) {
+    return cachedVoiceParsingRules;
+  }
+
+  try {
+    const rulesDocument = await db
+        .collection("config")
+        .doc("voiceParsing")
+        .get();
+
+    if (rulesDocument.exists) {
+      const storedRules = rulesDocument.data();
+
+      if (hasValidVoiceParsingRules(storedRules)) {
+        cachedVoiceParsingRules = {
+          ...DEFAULT_VOICE_PARSING_RULES,
+          ...storedRules,
+        };
+
+        voiceParsingRulesLoadedAt = now;
+        return cachedVoiceParsingRules;
+      }
+
+      console.warn(
+          "El documento config/voiceParsing no contiene reglas válidas",
+      );
+    }
+  } catch (error) {
+    console.error("Error loading voice parsing rules", error);
+  }
+
+  cachedVoiceParsingRules = DEFAULT_VOICE_PARSING_RULES;
+  voiceParsingRulesLoadedAt = now;
+
+  return cachedVoiceParsingRules;
+}
+
+/**
+ * Detecta si el texto corresponde a un gasto o un ingreso.
+ *
+ * @param {string} normalizedText Texto normalizado.
+ * @param {Object} rules Reglas de interpretación.
+ * @return {string|null} "expense", "income" o null.
+ */
+function detectTransactionType(normalizedText, rules) {
+  for (const keyword of rules.expenseKeywords) {
+    if (normalizedText.includes(normalizeSearchText(keyword))) {
+      return "expense";
+    }
+  }
+
+  for (const keyword of rules.incomeKeywords) {
+    if (normalizedText.includes(normalizeSearchText(keyword))) {
+      return "income";
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extrae el importe en céntimos.
+ *
+ * @param {string} text Texto original.
+ * @return {number|null}
+ */
+function extractAmountCents(text) {
+  const match = text.match(/(\d+[.,]?\d{0,2})/);
+
+  if (!match) {
+    return null;
+  }
+
+  const value = Number(
+      match[1].replace(",", "."),
+  );
+
+  if (Number.isNaN(value)) {
+    return null;
+  }
+
+  return Math.round(value * 100);
+}
+
+/**
+ * Escapa un texto para poder utilizarlo dentro de una expresión regular.
+ *
+ * @param {string} value Texto que se quiere escapar.
+ * @return {string} Texto escapado.
+ */
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extrae el comercio o el origen de una transacción.
+ *
+ * Ejemplos:
+ * - "He pagado 12,35 euros en Mercadona" -> "Mercadona"
+ * - "He pagado en Mercadona 12,35 euros" -> "Mercadona"
+ * - "He cobrado 2100 euros de Babel" -> "Babel"
+ * - "Me han hecho un Bizum de Juan de 15 euros" -> "Juan"
+ *
+ * @param {string} text Texto original recibido.
+ * @param {"expense"|"income"} type Tipo de transacción.
+ * @param {object} rules Reglas de interpretación de voz.
+ * @return {string|null} Comercio u origen encontrado.
+ */
+function extractMerchant(text, type, rules) {
+  const connectors = type === "expense" ?
+    rules.expenseMerchantConnectors :
+    rules.incomeMerchantConnectors;
+
+  if (!Array.isArray(connectors) || connectors.length === 0) {
+    return null;
+  }
+
+  /*
+   * Quitamos los espacios configurados alrededor de cada conector,
+   * pero exigimos que el conector aparezca como una palabra completa.
+   *
+   * De esta manera, el conector "a" no coincide con la letra "a"
+   * contenida dentro de "pagado".
+   */
+  const connectorValues = connectors
+      .map((connector) => connector.trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRegex);
+
+  if (connectorValues.length === 0) {
+    return null;
+  }
+
+  const connectorPattern = connectorValues.join("|");
+
+  const connectorRegex = new RegExp(
+      `(?:^|\\s)(?:${connectorPattern})(?=\\s|$)`,
+      "i",
+  );
+
+  const connectorMatch = connectorRegex.exec(text);
+
+  if (!connectorMatch) {
+    return null;
+  }
+
+  /*
+   * El contenido posterior al primer conector es el candidato
+   * inicial a comercio.
+   */
+  let merchant = text
+      .slice(connectorMatch.index + connectorMatch[0].length)
+      .trim();
+
+  if (!merchant) {
+    return null;
+  }
+
+  /*
+   * Cortamos el comercio cuando aparece un importe.
+   *
+   * También soporta frases como:
+   * "Bizum de Juan de 15 euros"
+   *
+   * En ese caso elimina "de 15 euros" y conserva solamente "Juan".
+   */
+  const currencyValues = Array.isArray(rules.currencyWords) ?
+    rules.currencyWords
+        .map((currency) => currency.trim())
+        .filter(Boolean)
+        .map(escapeRegex) :
+    [];
+
+  const currencyPattern = currencyValues.length > 0 ?
+    `(?:\\s*(?:${currencyValues.join("|")}))?` :
+    "";
+
+  const amountPattern = "\\d+(?:[.,]\\d{1,2})?";
+
+  const trailingAmountRegex = new RegExp(
+      `\\s+(?:(?:${connectorPattern})\\s+)?` +
+    `${amountPattern}${currencyPattern}.*$`,
+      "i",
+  );
+
+  merchant = merchant
+      .replace(trailingAmountRegex, "")
+      .trim();
+
+  return merchant || null;
+}
+
+/**
  * Obtiene la regla personalizada de un comercio para un usuario.
  *
  * @param {string} userId Identificador del usuario.
@@ -509,7 +803,7 @@ async function getUserMerchantRule(userId, merchant, type) {
         .doc(ruleKey)
         .get();
 
-    if (!ruleDocument.exists()) {
+    if (!ruleDocument.exists) {
       return null;
     }
 
@@ -600,6 +894,102 @@ async function guessCategory(userId, merchant, type) {
   return normalizedType === "income" ?
     "other_inc" :
     "other_exp";
+}
+
+const ALLOWED_CONFIG_DOCUMENTS = [
+  "voiceParsing",
+  "merchantCategories",
+];
+
+/**
+ * Comprueba si el valor es un objeto plano.
+ *
+ * @param {*} value Valor recibido.
+ * @return {boolean} True si es un objeto válido.
+ */
+function isPlainObject(value) {
+  return Boolean(
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value),
+  );
+}
+
+/**
+ * Comprueba si un documento de configuración está permitido.
+ *
+ * @param {*} documentId Identificador recibido.
+ * @return {boolean} True si puede administrarse.
+ */
+function isAllowedConfigDocument(documentId) {
+  return ALLOWED_CONFIG_DOCUMENTS.includes(
+      normalizeText(documentId),
+  );
+}
+
+/**
+ * Interpreta un texto de voz sin guardar ninguna transacción.
+ *
+ * @param {string} text Texto recibido.
+ * @return {Promise<Object>} Resultado de la interpretación.
+ */
+async function parseVoiceText(text) {
+  const normalizedTextValue = normalizeText(text);
+
+  if (!normalizedTextValue) {
+    return {
+      ok: false,
+      error: "missing_text",
+    };
+  }
+
+  const rules = await getVoiceParsingRules();
+  const normalizedText = normalizeSearchText(normalizedTextValue);
+
+  const type = detectTransactionType(
+      normalizedText,
+      rules,
+  );
+
+  const amountCents = extractAmountCents(
+      normalizedTextValue,
+  );
+
+  const merchant = type ?
+    extractMerchant(
+        normalizedTextValue,
+        type,
+        rules,
+    ) :
+    null;
+
+  const missing = [];
+
+  if (!type) {
+    missing.push("type");
+  }
+
+  if (!amountCents) {
+    missing.push("amount");
+  }
+
+  if (!merchant) {
+    missing.push("merchant");
+  }
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      missing,
+    };
+  }
+
+  return {
+    ok: true,
+    type,
+    amountCents,
+    merchant,
+  };
 }
 
 exports.addTransaction = onRequest(
@@ -719,6 +1109,311 @@ exports.addTransaction = onRequest(
         });
       } catch (error) {
         console.error("addTransaction error", error);
+
+        return res.status(500).json({
+          ok: false,
+          error: "internal_error",
+        });
+      }
+    },
+);
+
+exports.parseVoiceTransaction = onRequest(
+    {
+      region: "europe-west1",
+      secrets: [shortcutSecret],
+    },
+    async (req, res) => {
+      try {
+        if (req.method !== "POST") {
+          return res.status(405).json({
+            ok: false,
+            error: "method_not_allowed",
+          });
+        }
+
+        const suppliedSecret =
+      req.headers["x-cashly-token"] ||
+      (req.body && req.body.secret);
+
+        if (
+          !suppliedSecret ||
+      suppliedSecret !== shortcutSecret.value()
+        ) {
+          return res.status(401).json({
+            ok: false,
+            error: "unauthorized",
+          });
+        }
+
+        const body = req.body || {};
+        const text = normalizeText(body.text);
+
+        if (!text) {
+          return res.status(400).json({
+            ok: false,
+            error: "missing_text",
+          });
+        }
+
+        const parsedTransaction = await parseVoiceText(text);
+
+        return res.json(parsedTransaction);
+      } catch (error) {
+        console.error("parseVoiceTransaction error", error);
+
+        return res.status(500).json({
+          ok: false,
+          error: "internal_error",
+        });
+      }
+    });
+
+exports.addVoiceTransaction = onRequest(
+    {
+      region: "europe-west1",
+      secrets: [
+        shortcutSecret,
+        cashlyUserUid,
+      ],
+    },
+    async (req, res) => {
+      try {
+        if (req.method !== "POST") {
+          return res.status(405).json({
+            ok: false,
+            error: "method_not_allowed",
+          });
+        }
+
+        const suppliedSecret =
+          req.headers["x-cashly-token"] ||
+          (req.body && req.body.secret);
+
+        if (
+          !suppliedSecret ||
+          suppliedSecret !== shortcutSecret.value()
+        ) {
+          return res.status(401).json({
+            ok: false,
+            error: "unauthorized",
+          });
+        }
+
+        const body = req.body || {};
+        const text = normalizeText(body.text);
+
+        const parsedTransaction =
+          await parseVoiceText(text);
+
+        if (!parsedTransaction.ok) {
+          return res.status(400).json(
+              parsedTransaction,
+          );
+        }
+
+        const userId =
+          normalizeText(cashlyUserUid.value());
+
+        if (!userId) {
+          return res.status(400).json({
+            ok: false,
+            error: "missing_user_id",
+          });
+        }
+
+        const date = normalizeText(
+            body.date || body.dateISO,
+        );
+
+        if (!isValidDate(date)) {
+          return res.status(400).json({
+            ok: false,
+            error: "invalid_date",
+          });
+        }
+
+        const requestId =
+          normalizeText(body.requestId) ||
+          crypto.randomUUID();
+
+        const paymentCard =
+          normalizeText(body.paymentCard);
+
+        const note =
+          normalizeText(body.note);
+
+        const requestedCategoryId =
+          normalizeText(body.categoryId);
+
+        const finalCategoryId =
+          requestedCategoryId ||
+          await guessCategory(
+              userId,
+              parsedTransaction.merchant,
+              parsedTransaction.type,
+          );
+
+        const transactionRef = db
+            .collection("users")
+            .doc(userId)
+            .collection("transactions")
+            .doc(requestId);
+
+        const existingTransaction =
+          await transactionRef.get();
+
+        if (existingTransaction.exists) {
+          return res.status(200).json({
+            ok: true,
+            duplicate: true,
+            id: transactionRef.id,
+            parsed: parsedTransaction,
+          });
+        }
+
+        await transactionRef.set({
+          type: parsedTransaction.type,
+          amountCents:
+            parsedTransaction.amountCents,
+          categoryId: finalCategoryId,
+          date,
+          merchant:
+            parsedTransaction.merchant,
+          paymentCard,
+          note,
+          source: "voice_shortcut",
+          recurring: null,
+          shortcutRequestId: requestId,
+          originalVoiceText: text,
+          createdAt:
+            admin.firestore.FieldValue
+                .serverTimestamp(),
+        });
+
+        return res.status(201).json({
+          ok: true,
+          duplicate: false,
+          id: transactionRef.id,
+          parsed: parsedTransaction,
+          transaction: {
+            type: parsedTransaction.type,
+            amountCents:
+              parsedTransaction.amountCents,
+            merchant:
+              parsedTransaction.merchant,
+            categoryId: finalCategoryId,
+            date,
+          },
+        });
+      } catch (error) {
+        console.error(
+            "addVoiceTransaction error",
+            error,
+        );
+
+        return res.status(500).json({
+          ok: false,
+          error: "internal_error",
+        });
+      }
+    },
+);
+
+exports.importConfig = onRequest(
+    {
+      region: "europe-west1",
+      secrets: [adminSecret],
+    },
+    async (req, res) => {
+      try {
+        if (req.method !== "POST") {
+          return res.status(405).json({
+            ok: false,
+            error: "method_not_allowed",
+          });
+        }
+
+        const suppliedSecret =
+          req.headers["x-cashly-admin-token"] ||
+          (req.body && req.body.adminSecret);
+
+        if (
+          !suppliedSecret ||
+          suppliedSecret !== adminSecret.value()
+        ) {
+          return res.status(401).json({
+            ok: false,
+            error: "unauthorized",
+          });
+        }
+
+        const body = req.body || {};
+        const documentId = normalizeText(body.document);
+        const data = body.data;
+        const merge = body.merge === true;
+
+        if (!documentId) {
+          return res.status(400).json({
+            ok: false,
+            error: "missing_document",
+          });
+        }
+
+        if (!isAllowedConfigDocument(documentId)) {
+          return res.status(403).json({
+            ok: false,
+            error: "document_not_allowed",
+            allowedDocuments: ALLOWED_CONFIG_DOCUMENTS,
+          });
+        }
+
+        if (!isPlainObject(data)) {
+          return res.status(400).json({
+            ok: false,
+            error: "invalid_data",
+          });
+        }
+
+        if (Object.keys(data).length === 0) {
+          return res.status(400).json({
+            ok: false,
+            error: "empty_data",
+          });
+        }
+
+        const configReference = db
+            .collection("config")
+            .doc(documentId);
+
+        await configReference.set(data, {merge});
+
+        /*
+         * Invalida las cachés afectadas para que la misma instancia
+         * no siga utilizando temporalmente la configuración anterior.
+         */
+        if (documentId === "voiceParsing") {
+          cachedVoiceParsingRules = null;
+          voiceParsingRulesLoadedAt = 0;
+        }
+
+        if (documentId === "merchantCategories") {
+          cachedCategoryRules = null;
+          categoryRulesLoadedAt = 0;
+        }
+
+        console.log(
+            `Config imported: config/${documentId}, merge=${merge}`,
+        );
+
+        return res.status(200).json({
+          ok: true,
+          path: `config/${documentId}`,
+          merge,
+          fields: Object.keys(data),
+        });
+      } catch (error) {
+        console.error("importConfig error", error);
 
         return res.status(500).json({
           ok: false,
