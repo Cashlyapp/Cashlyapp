@@ -558,6 +558,7 @@ exports.addTransaction = onRequest(
         const userId = normalizeText(cashlyUserUid.value());
         const merchant = normalizeText(body.merchant);
         const paymentCard = normalizeText(body.paymentCard);
+        const type = normalizeText(body.type) || "expense";
         const categoryId = normalizeText(body.categoryId);
         const note = normalizeText(body.note);
         const date = normalizeText(body.date || body.dateISO);
@@ -581,8 +582,18 @@ exports.addTransaction = onRequest(
           });
         }
 
+        if (!["expense", "income"].includes(type)) {
+          return res.status(400).json({
+            ok: false,
+            error: "invalid_type",
+          });
+        }
+
         const finalCategoryId =
-          categoryId || await guessCategory(userId, merchant);
+          categoryId ||
+          (type === "expense" ?
+            await guessCategory(userId, merchant) :
+            "other_inc");
 
         if (!isValidDate(date)) {
           return res.status(400).json({
@@ -608,14 +619,16 @@ exports.addTransaction = onRequest(
         }
 
         await transactionRef.set({
-          type: "expense",
+          type,
           amountCents,
           categoryId: finalCategoryId,
           date,
           merchant,
           paymentCard,
           note,
-          source: "apple_pay_shortcut",
+          source: type === "expense" ?
+          "apple_pay_shortcut" :
+          "manual_income_shortcut",
           recurring: null,
           shortcutRequestId: requestId,
           createdAt:
