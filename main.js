@@ -74,7 +74,7 @@ const state = {
 
 window.__state = state;
 
-const APP_VERSION = 'v1.0.0';
+const APP_VERSION = 'v1.0.1';
 
 const el = {
   // Cabecera / toolbar
