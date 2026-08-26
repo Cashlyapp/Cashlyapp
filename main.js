@@ -81,12 +81,15 @@ const state = {
   chartExpenses: null,
   chartIncome: null,
   activeChartIndex: 0,
-  chartHistory: null
+  chartHistory: null,
+  statsCategoryChart: null,
+  statsHistoryChart: null,
+  wealthPageChart: null
 };
 
 window.__state = state;
 
-const APP_VERSION = 'v1.0.7';
+const APP_VERSION = 'v1.6.2';
 
 const el = {
   // Cabecera / toolbar
@@ -154,6 +157,7 @@ const el = {
   ocrPreview:   document.getElementById('ocrPreview'),
   ocrImport:    document.getElementById('ocrImport'),
   ocrCancel:    document.getElementById('ocrCancel'),
+  ocrAccount:   document.getElementById('ocrAccount'),
 
   // Auth
   authDialog:   document.getElementById('authDialog'),
@@ -317,7 +321,7 @@ function getVisibleMonthTxs() {
 
 
 // Construye la tarjeta HTML de un movimiento
-function renderTxCard(tx) {
+function renderTxCard(tx, { compact = false } = {}) {
   const isTransfer = tx.type === 'transfer';
   const fromAccount = isTransfer ? state.accounts.find(a => a.id === tx.fromAccountId) : null;
   const toAccount = isTransfer ? state.accounts.find(a => a.id === tx.toAccountId) : null;
@@ -329,7 +333,7 @@ function renderTxCard(tx) {
       });
 
   const li = document.createElement('li');
-  li.className = `tx ${tx.type}`;
+  li.className = `tx ${tx.type}${compact ? ' tx--compact' : ''}`;
   li.dataset.id = tx.id;
 
   const emojiDiv = document.createElement('div');
@@ -360,7 +364,7 @@ function renderTxCard(tx) {
       ].filter(Boolean)
     : [
         cat.name,
-        tx.paymentCard,
+        state.accounts.find(a => a.id === tx.accountId)?.name || '',
         tx.merchant ? tx.note : '',
         d.toLocaleDateString('es-ES')
       ].filter(Boolean);
@@ -395,7 +399,20 @@ subDiv.textContent = subParts.join(' • ');
   li.appendChild(emojiDiv);
   li.appendChild(mainDiv);
   li.appendChild(amountDiv);
-  li.appendChild(actionsDiv);
+  if (!compact) {
+    li.appendChild(actionsDiv);
+  } else {
+    li.classList.add('tx--clickable');
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    li.addEventListener('click', () => openEditDialog(tx));
+    li.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openEditDialog(tx);
+      }
+    });
+  }
 
   return li;
 }
@@ -411,7 +428,7 @@ function refreshList() {
   if (!list.length) {
   } else {
     const frag = document.createDocumentFragment();
-    list.forEach(tx => frag.appendChild(renderTxCard(tx)));
+    list.slice(0, 8).forEach(tx => frag.appendChild(renderTxCard(tx, { compact: true })));
     el.txList.appendChild(frag);
   }
 
@@ -448,11 +465,14 @@ function refreshList() {
   }
 
 
-  // Donut 1: distribución de gastos
-  // Donut 2: gastos sobre ingresos (con "Restante")
-  renderDonutCharts(byCategory, inc, exp);
+  // R2: los gráficos dejan de pertenecer a Inicio.
+  // Conservamos sus funciones para reutilizarlas en Estadísticas (R4).
 
   renderWealthCard();
+  if (!document.getElementById('movementsView')?.hidden) renderAllMovements();
+  if (!document.getElementById('statsView')?.hidden) renderStatistics();
+  if (!document.getElementById('wealthView')?.hidden) renderWealthPage();
+  if (!document.getElementById('wealthView')?.hidden) renderWealthPage();
 
   // Si el diálogo de histórico está abierto, lo refrescamos
   if (el.dlgHistory?.open) {
@@ -1049,6 +1069,68 @@ function renderWealthDialog() {
   }
 }
 
+function renderWealthPage() {
+  const balances = getActiveAccounts().map(account => ({
+    account,
+    balance: calculateAccountBalance(account)
+  }));
+  const total = balances.reduce((sum, item) => sum + item.balance, 0);
+
+  const totalEl = document.getElementById('wealthPageTotal');
+  if (totalEl) totalEl.textContent = centsToEUR(total);
+
+  const distribution = document.getElementById('wealthPageDistribution');
+  if (distribution) {
+    distribution.innerHTML = balances.map(({account,balance}) => {
+      const pct = total > 0 && balance > 0 ? balance / total * 100 : 0;
+      const icon = account.type === 'cash' ? '💶' : '🏦';
+      return `<div class="wealth-page-dist-row"><div><strong>${icon} ${account.name}</strong><span>${centsToEUR(balance)}</span></div><strong>${pct.toFixed(1).replace('.', ',')}%</strong></div>`;
+    }).join('');
+  }
+
+  const series = buildWealthHistorySeries();
+  const first = series.values[0] ?? total;
+  const last = series.values.at(-1) ?? total;
+  const diff = last - first;
+  const pct = first !== 0 ? diff / Math.abs(first) * 100 : 0;
+  document.getElementById('wealthPageChangeAmount').textContent = `${diff >= 0 ? '+' : ''}${centsToEUR(diff)}`;
+  document.getElementById('wealthPageChangePct').textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(1).replace('.', ',')} %`;
+
+  if (state.wealthPageChart) state.wealthPageChart.destroy();
+  const canvas = document.getElementById('wealthPageChart');
+  if (canvas && series.labels.length && window.Chart) {
+    state.wealthPageChart = new Chart(canvas.getContext('2d'), {
+      type:'line',
+      data:{labels:series.labels.map(formatShortDate),datasets:[{
+        label:'Patrimonio',data:series.values.map(v=>v/100),tension:.32,fill:true,
+        borderWidth:2,pointRadius:2,backgroundColor:'rgba(99,102,241,.10)',borderColor:'#818cf8'
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>centsToEUR(Math.round(c.parsed.y*100))}}},scales:{x:{ticks:{maxTicksLimit:7,color:'#94a3b8'},grid:{display:false}},y:{ticks:{color:'#94a3b8',callback:v=>`${v.toLocaleString('es-ES')} €`},grid:{color:'rgba(148,163,184,.10)'}}}}
+    });
+  }
+
+  const list = document.getElementById('wealthPageAccountsList');
+  if (list) {
+    list.innerHTML = '';
+    for (const {account,balance} of balances) {
+      const pctAccount = total > 0 && balance > 0 ? balance/total*100 : 0;
+      const btn = document.createElement('button');
+      btn.type='button';
+      btn.className='wealth-page-account-row';
+      btn.innerHTML=`<span><strong>${account.type==='cash'?'💶':'🏦'} ${account.name}</strong><small>${pctAccount.toFixed(0)}% de tu dinero</small></span><span><strong>${centsToEUR(balance)}</strong><b>›</b></span>`;
+      btn.addEventListener('click',()=>openAccountDetail(account.id));
+      list.appendChild(btn);
+    }
+  }
+}
+
+function initR5WealthPage() {
+  document.getElementById('btnManageAccountsFromWealth')?.addEventListener('click', () => {
+    openAccountsDialog();
+  });
+}
+window.addEventListener('DOMContentLoaded', initR5WealthPage);
+
 function openAccountDetail(accountId) {
   const account = state.accounts.find(a => a.id === accountId);
   if (!account || !el.dlgAccountDetail || !el.accountDetailContent) return;
@@ -1487,6 +1569,166 @@ el.form?.addEventListener('submit', async (e) => {
 
 
 
+
+// =============================
+// R3. Vista completa de movimientos
+// =============================
+const r3MovementState = { filter: 'all', search: '' };
+
+function getFilteredMovementTxs() {
+  const monthTxs = getVisibleMonthTxs();
+  const q = r3MovementState.search.trim().toLocaleLowerCase('es');
+  return monthTxs.filter(tx => {
+    if (r3MovementState.filter !== 'all' && tx.type !== r3MovementState.filter) return false;
+    if (!q) return true;
+    const cat = CATEGORY_BY_ID[tx.categoryId]?.name || '';
+    const account = state.accounts.find(a => a.id === tx.accountId)?.name || '';
+    const from = state.accounts.find(a => a.id === tx.fromAccountId)?.name || '';
+    const to = state.accounts.find(a => a.id === tx.toAccountId)?.name || '';
+    return [tx.merchant, tx.note, cat, account, from, to, tx.date]
+      .filter(Boolean).join(' ').toLocaleLowerCase('es').includes(q);
+  });
+}
+
+function renderAllMovements() {
+  const listEl = document.getElementById('allTxList');
+  if (!listEl) return;
+  const txs = getFilteredMovementTxs();
+  listEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  txs.forEach(tx => frag.appendChild(renderTxCard(tx, { compact: true })));
+  listEl.appendChild(frag);
+  document.getElementById('allTxEmpty')?.classList.toggle('hidden', txs.length > 0);
+  const meta = document.getElementById('movementResultsMeta');
+  if (meta) meta.textContent = `${txs.length} ${txs.length === 1 ? 'movimiento' : 'movimientos'} · ${el.currentMonth?.textContent || ''}`;
+}
+
+function showR3View(target) {
+  const home = document.getElementById('homeView');
+  const movements = document.getElementById('movementsView');
+  const stats = document.getElementById('statsView');
+  const wealth = document.getElementById('wealthView');
+  if (!home || !movements) return;
+
+  const movementMode = target === 'movements';
+  const statsMode = target === 'stats';
+  const wealthMode = target === 'wealth';
+
+  home.hidden = movementMode || statsMode || wealthMode;
+  movements.hidden = !movementMode;
+  if (stats) stats.hidden = !statsMode;
+  if (wealth) wealth.hidden = !wealthMode;
+
+  if (movementMode) renderAllMovements();
+  if (statsMode) renderStatistics();
+  if (wealthMode) renderWealthPage();
+
+  if (movementMode || statsMode || wealthMode) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+function initR3Movements() {
+  document.querySelectorAll('[data-tx-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      r3MovementState.filter = btn.dataset.txFilter || 'all';
+      document.querySelectorAll('[data-tx-filter]').forEach(x => x.classList.toggle('is-active', x === btn));
+      renderAllMovements();
+    });
+  });
+  document.getElementById('movementSearch')?.addEventListener('input', event => {
+    r3MovementState.search = event.target.value || '';
+    renderAllMovements();
+  });
+  document.getElementById('btnNewMovementTop')?.addEventListener('click', () => el.fabAdd?.click());
+}
+window.addEventListener('DOMContentLoaded', initR3Movements);
+
+
+// =============================
+// R4. Estadísticas
+// =============================
+function renderStatsCategories() {
+  const canvas = document.getElementById('statsCategoryChart');
+  const legend = document.getElementById('statsCategoryLegend');
+  if (!canvas || !legend) return;
+  const byCategory = {};
+  let total = 0;
+  getVisibleMonthTxs().forEach(tx => {
+    if (tx.type !== 'expense') return;
+    const amount = tx.amountCents || 0;
+    total += amount;
+    const id = tx.categoryId || 'other_exp';
+    byCategory[id] = (byCategory[id] || 0) + amount;
+  });
+  document.getElementById('statsCategoryTotal').textContent = centsToEUR(total);
+  const entries = Object.entries(byCategory).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]);
+  legend.innerHTML = entries.length ? entries.map(([id,cents]) => {
+    const cat = CATEGORY_BY_ID[id] || {name:'Otros gastos',emoji:'•'};
+    const pct = total ? (cents/total*100).toFixed(1) : '0.0';
+    return `<div class="stats-legend-row"><span>${cat.emoji} ${cat.name}</span><strong>${centsToEUR(cents)} <small>${pct}%</small></strong></div>`;
+  }).join('') : '<div class="stats-empty">No hay gastos este mes.</div>';
+  if (state.statsCategoryChart) state.statsCategoryChart.destroy();
+  if (!entries.length) { state.statsCategoryChart = null; return; }
+  state.statsCategoryChart = new Chart(canvas.getContext('2d'), {
+    type:'doughnut',
+    data:{
+      labels:entries.map(([id]) => CATEGORY_BY_ID[id]?.name || 'Otros gastos'),
+      datasets:[{data:entries.map(([,c]) => c/100),backgroundColor:entries.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderWidth:0}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'70%',plugins:{legend:{display:false}}}
+  });
+}
+
+function renderStatsHistory() {
+  const canvas = document.getElementById('statsHistoryChart');
+  if (!canvas) return;
+  const { labels, income, expense, balance } = buildHistorySeries(8);
+  if (state.statsHistoryChart) state.statsHistoryChart.destroy();
+  if (!labels.length) { state.statsHistoryChart = null; return; }
+  state.statsHistoryChart = new Chart(canvas.getContext('2d'), {
+    type:'bar',
+    data:{labels,datasets:[
+      {label:'Ingresos',data:income,backgroundColor:COLOR_HISTORY_INCOME,borderRadius:5},
+      {label:'Gastos',data:expense,backgroundColor:COLOR_HISTORY_EXPENSE,borderRadius:5},
+      {label:'Balance',data:balance,type:'line',borderColor:COLOR_HISTORY_BALANCE,backgroundColor:COLOR_HISTORY_BALANCE,tension:.28,pointRadius:3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:'#cbd5e1'}}},scales:{x:{ticks:{color:'#94a3b8'},grid:{display:false}},y:{ticks:{color:'#94a3b8'},grid:{color:'rgba(148,163,184,.10)'}}}}
+  });
+}
+
+function renderStatsAccounts() {
+  const root = document.getElementById('statsAccountsList');
+  if (!root) return;
+  const expenses = getVisibleMonthTxs().filter(tx => tx.type === 'expense');
+  const totals = new Map();
+  expenses.forEach(tx => totals.set(tx.accountId || '', (totals.get(tx.accountId || '') || 0) + (tx.amountCents || 0)));
+  const total = expenses.reduce((s,tx)=>s+(tx.amountCents||0),0);
+  const rows = state.accounts.map(account => ({account,cents:totals.get(account.id)||0})).sort((a,b)=>b.cents-a.cents);
+  root.innerHTML = rows.length ? rows.map(({account,cents}) => {
+    const pct = total ? cents/total*100 : 0;
+    return `<div class="stats-account-row"><div class="stats-account-row__top"><span>${account.type === 'cash' ? '💶' : '🏦'} ${account.name}</span><strong>${centsToEUR(cents)} <small>${pct.toFixed(1)}%</small></strong></div><div class="stats-account-bar"><span style="width:${Math.min(100,pct)}%"></span></div></div>`;
+  }).join('') : '<div class="stats-empty">No hay cuentas.</div>';
+}
+
+function renderStatistics() {
+  const label = document.getElementById('statsMonthLabel');
+  if (label) label.textContent = el.currentMonth?.textContent || '';
+  renderStatsCategories();
+  renderStatsHistory();
+  renderStatsAccounts();
+}
+
+function initR4Statistics() {
+  document.querySelectorAll('[data-stats-tab]').forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.dataset.statsTab;
+    document.querySelectorAll('[data-stats-tab]').forEach(x => x.classList.toggle('is-active', x === btn));
+    document.querySelectorAll('[data-stats-panel]').forEach(x => x.classList.toggle('is-active', x.dataset.statsPanel === tab));
+    if (tab === 'evolution') setTimeout(renderStatsHistory,0);
+  }));
+}
+window.addEventListener('DOMContentLoaded', initR4Statistics);
+
 // =============================
 // 7. Integración con Firebase
 // =============================
@@ -1515,6 +1757,7 @@ document.addEventListener('firebase-ready', async () => {
         renderAccountOptions({ selectedId: DEFAULT_ACCOUNT_IDS.MAIN });
         renderTransferAccountOptions();
       }
+      if (el.dlgOcr?.open) renderOcrAccountOptions();
       renderWealthCard();
       if (el.dlgAccounts?.open) renderAccountsBalanceDialog();
       if (el.dlgWealth?.open) renderWealthDialog();
@@ -2363,8 +2606,27 @@ function renderCandidatesForImport(candidates) {
   el.ocrImport.disabled = !candidates.length;
 }
 
+
+function renderOcrAccountOptions() {
+  if (!el.ocrAccount) return;
+  const accounts = getActiveAccounts();
+  const current = el.ocrAccount.value;
+  el.ocrAccount.innerHTML = '<option value="">Selecciona una cuenta</option>';
+  for (const account of accounts) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = `${account.type === 'cash' ? '💶' : '🏦'} ${account.name}`;
+    el.ocrAccount.appendChild(option);
+  }
+  const preferred = current && accounts.some(a => a.id === current)
+    ? current
+    : (accounts.find(a => a.id === DEFAULT_ACCOUNT_IDS.MAIN)?.id || accounts[0]?.id || '');
+  el.ocrAccount.value = preferred;
+}
+
 // Eventos OCR
 el.btnOcr?.addEventListener('click', () => {
+  renderOcrAccountOptions();
   el.ocrFiles.click();
 });
 
@@ -2472,6 +2734,12 @@ el.ocrImport?.addEventListener('click', async () => {
     return;
   }
 
+  const accountId = el.ocrAccount?.value || '';
+  if (!accountId) {
+    alert('Selecciona la cuenta en la que quieres importar los movimientos.');
+    return;
+  }
+
   const checkboxes = el.ocrPreview.querySelectorAll('input[type="checkbox"]');
   const toImport = [];
 
@@ -2489,6 +2757,7 @@ el.ocrImport?.addEventListener('click', async () => {
     (tx.type === 'income' ? 'other_inc' : 'other_exp'),
   date: tx.date,
   merchant: tx.merchant || '',
+  accountId,
   paymentCard: '',
   note: '',
   source: 'ocr',
@@ -2519,13 +2788,26 @@ el.ocrImport?.addEventListener('click', async () => {
 // =============================
 
 function openAccountsDialog() {
-  if (el.toolbarMenu) el.toolbarMenu.classList.remove('open');
+  if (el.toolbarMenu) {
+    el.toolbarMenu.classList.remove('toolbar-menu--open');
+    el.toolbarMenu.classList.remove('open');
+  }
+
   renderAccountsBalanceDialog();
-  el.dlgAccounts?.showModal();
+
+  if (el.dlgAccounts && !el.dlgAccounts.open) {
+    el.dlgAccounts.showModal();
+  }
 }
 
-el.btnAccounts?.addEventListener('click', openAccountsDialog);
-el.wealthCard?.addEventListener('click', openWealthDialog);
+el.btnAccounts?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  openAccountsDialog();
+});
+el.wealthCard?.addEventListener('click', () => {
+  document.querySelector('[data-r1-nav="wealth"]')?.click();
+});
 el.btnCloseWealth?.addEventListener('click', () => el.dlgWealth?.close());
 el.adjustRealBalance?.addEventListener('input', refreshAdjustmentDifference);
 el.btnCancelBalanceAdjustment?.addEventListener('click', () => el.dlgBalanceAdjustment?.close());
@@ -2560,4 +2842,47 @@ el.btnOpenHistory?.addEventListener('click', () => {
 
 el.btnCloseHistory?.addEventListener('click', () => {
   el.dlgHistory?.close();
+});
+
+
+// R1 navigation shell: existing dialogs/features are reused in this first redesign step.
+function initR1Navigation(){
+  const setActive = (target) => {
+    document.querySelectorAll('[data-r1-nav]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.r1Nav === target);
+    });
+  };
+  document.querySelectorAll('[data-r1-nav]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.r1Nav;
+      if (target === 'home') {
+        setActive('home');
+        showR3View('home');
+        window.scrollTo({top:0, behavior:'smooth'});
+        return;
+      }
+      if (target === 'movements') {
+        setActive('movements');
+        showR3View('movements');
+        return;
+      }
+      if (target === 'wealth') {
+        setActive('wealth');
+        showR3View('wealth');
+        return;
+      }
+      if (target === 'stats') {
+        setActive('stats');
+        showR3View('stats');
+      }
+    });
+  });
+  document.getElementById('dlgWealth')?.addEventListener('close', () => setActive('home'));
+  document.getElementById('dlgHistory')?.addEventListener('close', () => setActive('home'));
+}
+window.addEventListener('DOMContentLoaded', () => {
+  initR1Navigation();
+  document.getElementById('btnViewAllMovements')?.addEventListener('click', () => {
+    document.querySelector('[data-r1-nav="movements"]')?.click();
+  });
 });

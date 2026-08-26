@@ -27,6 +27,20 @@
     <img src="Logo.png" alt="" class="splash-logo">
   </div>
 
+  <aside class="desktop-sidebar" aria-label="Navegación principal">
+    <div class="desktop-sidebar__brand">
+      <img src="Logo.png" alt="" class="desktop-sidebar__logo">
+      <span>Cashly</span>
+    </div>
+    <nav class="desktop-nav">
+      <button type="button" class="desktop-nav__item is-active" data-r1-nav="home"><span>⌂</span>Inicio</button>
+      <button type="button" class="desktop-nav__item" data-r1-nav="movements"><span>↕</span>Movimientos</button>
+      <button type="button" class="desktop-nav__item" data-r1-nav="wealth"><span>◔</span>Patrimonio</button>
+      <button type="button" class="desktop-nav__item" data-r1-nav="stats"><span>▥</span>Estadísticas</button>
+    </nav>
+    <div class="desktop-sidebar__footer">v1.6.2 · Rediseño R1</div>
+  </aside>
+
   <header class="app-bar">
     <div class="app-brand">
       <img src="Logo.png" alt="" class="brand-logo">
@@ -59,12 +73,12 @@
   <div id="toolbarMenu" class="toolbar-menu">
     <button id="btnExport" type="button">
       <span class="menu-icon menu-icon-export"></span>
-      <span>Exportar JSON</span>
+      <span>Exportar copia de seguridad</span>
     </button>
 
     <label class="file-label">
       <span class="menu-icon menu-icon-import"></span>
-      <span>Importar JSON</span>
+      <span>Importar copia de seguridad</span>
       <input type="file" id="fileImport" accept="application/json" hidden>
     </label>
 
@@ -72,15 +86,9 @@
       <span class="menu-icon menu-icon-export"></span>
       <span>Exportar CSV</span>
     </button>
-
-    <button type="button" id="btnOpenHistory" class="toolbar-menu__item">
-      <span class="toolbar-menu__icon">📈</span>
-      <span>Histórico de meses</span>
-    </button>
-
-    <button type="button" id="btnAccounts" class="toolbar-menu__item">
+<button type="button" id="btnAccounts" class="toolbar-menu__item">
       <span class="toolbar-menu__icon">🏦</span>
-      <span>Cuentas y saldos</span>
+      <span>Gestionar cuentas</span>
     </button>
 
     <hr />
@@ -94,7 +102,7 @@
 
 
 
-<main>
+<main id="homeView" class="app-view app-view--active">
   <section class="summary">
     <div class="month-select">
       <button id="prevMonth" aria-label="Mes anterior">‹</button>
@@ -122,37 +130,21 @@
         <div id="expenseTotal" class="card-value">—</div>
       </div>
       <div class="card highlight">
-        <div class="card-title">Saldo del mes</div>
+        <div class="card-title">Balance</div>
         <div id="balance" class="card-value">—</div>
       </div>
     </div>
     <div id="kpiSpendRate" class="kpi-spend-rate"></div>
-    <div class="chart-carousel chart-carousel--slide0" id="chartCarousel">
-      <canvas id="chartDonutExpenses" height="160"></canvas>
-      <canvas id="chartDonutIncome" height="160"></canvas>
-    </div>
-    <div class="chart-dots">
-      <button
-        type="button"
-        class="dot dot--active"
-        data-chart="0"
-        aria-label="Ver distribución de gastos"></button>
-      <button
-        type="button"
-        class="dot"
-        data-chart="1"
-        aria-label="Ver gastos sobre ingresos"></button>
-    </div>
-    <div id="chartEmpty" class="chart-empty hidden">
-      <p>No hay movimientos este mes.</p>
-      <p class="small">
-        Añade el primero con el botón <strong>+</strong> para ver tus gráficos.
-      </p>
-    </div>
   </section>
 
   <section class="list">
-    <h2>Movimientos</h2>
+    <div class="list-heading">
+      <div>
+        <span class="section-eyebrow">ACTIVIDAD</span>
+        <h2>Últimos movimientos</h2>
+      </div>
+      <button type="button" id="btnViewAllMovements" class="text-action">Ver todos</button>
+    </div>
     <ul id="txList" class="tx-list"></ul>
     <div id="emptyState" class="empty-state">
       <img src="empty.svg" alt="">
@@ -160,6 +152,120 @@
     </div>
   </section>
 </main>
+
+<main id="movementsView" class="app-view movements-view" hidden>
+  <section class="movements-page">
+    <div class="movements-page__header">
+      <div>
+        <span class="section-eyebrow">ACTIVIDAD</span>
+        <h1>Movimientos</h1>
+      </div>
+      <button type="button" id="btnNewMovementTop" class="primary-action">＋ Nuevo movimiento</button>
+    </div>
+
+    <div class="movements-toolbar">
+      <div class="movement-filters" role="group" aria-label="Filtrar movimientos">
+        <button type="button" class="movement-filter is-active" data-tx-filter="all">Todos</button>
+        <button type="button" class="movement-filter" data-tx-filter="expense">Gastos</button>
+        <button type="button" class="movement-filter" data-tx-filter="income">Ingresos</button>
+        <button type="button" class="movement-filter" data-tx-filter="transfer">Transferencias</button>
+      </div>
+      <label class="movement-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="movementSearch" type="search" placeholder="Buscar comercio, categoría, cuenta…" autocomplete="off">
+      </label>
+    </div>
+
+    <div id="movementResultsMeta" class="movement-results-meta"></div>
+    <ul id="allTxList" class="tx-list tx-list--all"></ul>
+    <div id="allTxEmpty" class="empty-state hidden"><p>No hay movimientos que coincidan.</p></div>
+  </section>
+</main>
+
+<main id="wealthView" class="app-view wealth-page-view" hidden>
+  <section class="wealth-page">
+    <div class="wealth-page__header">
+      <div>
+        <span class="section-eyebrow">PATRIMONIO</span>
+        <h1>Tu patrimonio</h1>
+      </div>
+      <button type="button" id="btnManageAccountsFromWealth" class="secondary-action">Gestionar cuentas</button>
+    </div>
+
+    <div class="wealth-page__grid">
+      <section class="wealth-page__hero stats-card">
+        <span class="section-eyebrow">TOTAL DISPONIBLE</span>
+        <div id="wealthPageTotal" class="wealth-page__total">—</div>
+        <div class="wealth-page__change">
+          <div><span>Desde el inicio</span><strong id="wealthPageChangeAmount">—</strong></div>
+          <div><span>Variación</span><strong id="wealthPageChangePct">—</strong></div>
+        </div>
+      </section>
+
+      <section class="stats-card wealth-page__distribution">
+        <span class="section-eyebrow">DISTRIBUCIÓN</span>
+        <h2>Entre tus cuentas</h2>
+        <div id="wealthPageDistribution"></div>
+      </section>
+
+      <section class="stats-card wealth-page__history">
+        <span class="section-eyebrow">EVOLUCIÓN</span>
+        <h2>Patrimonio en el tiempo</h2>
+        <div class="wealth-page__chart"><canvas id="wealthPageChart"></canvas></div>
+      </section>
+
+      <section class="stats-card wealth-page__accounts">
+        <span class="section-eyebrow">CUENTAS</span>
+        <h2>Tu dinero</h2>
+        <div id="wealthPageAccountsList"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<main id="statsView" class="app-view stats-view" hidden>
+  <section class="stats-page">
+    <div class="stats-page__header">
+      <div><span class="section-eyebrow">ANÁLISIS</span><h1>Estadísticas</h1></div>
+      <div class="stats-month-label" id="statsMonthLabel">—</div>
+    </div>
+    <div class="stats-tabs" role="tablist">
+      <button type="button" class="stats-tab is-active" data-stats-tab="categories">Categorías</button>
+      <button type="button" class="stats-tab" data-stats-tab="evolution">Evolución</button>
+      <button type="button" class="stats-tab" data-stats-tab="accounts">Cuentas</button>
+    </div>
+
+    <section class="stats-panel is-active" data-stats-panel="categories">
+      <div class="stats-card stats-card--split">
+        <div><span class="section-eyebrow">GASTOS DEL MES</span><h2>Por categoría</h2><div id="statsCategoryTotal" class="stats-big-number">—</div></div>
+        <div class="stats-chart-wrap"><canvas id="statsCategoryChart"></canvas></div>
+        <div id="statsCategoryLegend" class="stats-legend"></div>
+      </div>
+    </section>
+
+    <section class="stats-panel" data-stats-panel="evolution">
+      <div class="stats-card">
+        <span class="section-eyebrow">ÚLTIMOS MESES</span><h2>Ingresos, gastos y balance</h2>
+        <div class="stats-history-wrap"><canvas id="statsHistoryChart"></canvas></div>
+      </div>
+    </section>
+
+    <section class="stats-panel" data-stats-panel="accounts">
+      <div class="stats-card">
+        <span class="section-eyebrow">GASTOS DEL MES</span><h2>Por cuenta</h2>
+        <div id="statsAccountsList" class="stats-account-list"></div>
+      </div>
+    </section>
+  </section>
+</main>
+
+<nav class="mobile-bottom-nav" aria-label="Navegación principal">
+  <button type="button" class="mobile-bottom-nav__item is-active" data-r1-nav="home"><span>⌂</span><small>Inicio</small></button>
+  <button type="button" class="mobile-bottom-nav__item" data-r1-nav="movements"><span>↕</span><small>Movimientos</small></button>
+  <span class="mobile-bottom-nav__fab-space" aria-hidden="true"></span>
+  <button type="button" class="mobile-bottom-nav__item" data-r1-nav="wealth"><span>◔</span><small>Patrimonio</small></button>
+  <button type="button" class="mobile-bottom-nav__item" data-r1-nav="stats"><span>▥</span><small>Estadísticas</small></button>
+</nav>
 
 <button id="fabAdd" class="fab" aria-label="Añadir">＋</button>
 
@@ -249,7 +355,7 @@
 <!-- Diálogo de cuentas y saldos -->
 <dialog id="dlgAccounts" class="sheet accounts-sheet">
   <form method="dialog" id="accountsForm">
-    <h3>Cuentas y saldos</h3>
+    <h3>Gestionar cuentas</h3>
     <p class="sub accounts-help">Indica el saldo real de cada cuenta al cierre de una fecha. Cashly sumará los ingresos y restará los gastos posteriores a esa fecha.</p>
     <div id="accountsBalanceList"></div>
     <menu>
@@ -262,6 +368,13 @@
 <dialog id="dlgOcr" class="sheet">
   <h3>Importar desde imágenes</h3>
   <div id="ocrStatus" class="sub">Listo</div>
+  <label class="field ocr-account-field">
+    <span>Importar en la cuenta</span>
+    <select id="ocrAccount" required>
+      <option value="">Selecciona una cuenta</option>
+    </select>
+    <small>Todos los movimientos seleccionados se asociarán a esta cuenta.</small>
+  </label>
   <div id="ocrPreview" style="max-height:40vh; overflow:auto; margin:8px 0;"></div>
   <menu>
     <button type="button" id="ocrCancel">Cancelar</button>
