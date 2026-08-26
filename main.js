@@ -23,6 +23,13 @@ import {
   isTransactionsReady
 } from './transactions-service.js';
 
+import {
+  initAccountsListener,
+  ensureDefaultAccounts,
+  updateAccountOpeningBalance,
+  DEFAULT_ACCOUNT_IDS
+} from './accounts-service.js';
+
 // ===== SPLASH CONTROL =====
 function hideSplash() {
   const sp = document.getElementById('splash');
@@ -39,11 +46,14 @@ function showSplash() {
 /**
  * @typedef {Object} InternalTx
  * @property {string} id
- * @property {'income'|'expense'} type
+ * @property {'income'|'expense'|'transfer'} type
  * @property {number} amountCents       // céntimos
  * @property {string} categoryId
  * @property {string} date              // ISO YYYY-MM-DD
  * @property {string} [merchant]
+ * @property {string|null} [accountId]
+ * @property {string|null} [fromAccountId]
+ * @property {string|null} [toAccountId]
  * @property {string} [paymentCard]
  * @property {string} [note]
  * @property {'manual'|'apple_pay'|'ocr'|'import'} [source]
@@ -58,6 +68,7 @@ function showSplash() {
 /** @type {{
  *   month: string,
  *   txs: InternalTx[],
+ *   accounts: any[],
  *   chartExpenses: any,
  *   chartIncome: any,
  *   activeChartIndex: number,
@@ -66,6 +77,7 @@ function showSplash() {
 const state = {
   month: toMonthKey(new Date()),
   txs: [],
+  accounts: [],
   chartExpenses: null,
   chartIncome: null,
   activeChartIndex: 0,
@@ -74,7 +86,7 @@ const state = {
 
 window.__state = state;
 
-const APP_VERSION = 'v1.0.1';
+const APP_VERSION = 'v1.0.7';
 
 const el = {
   // Cabecera / toolbar
@@ -95,6 +107,9 @@ const el = {
   donutIncome:    document.getElementById('chartDonutIncome'),
   donutDots:      Array.from(document.querySelectorAll('.chart-dots .dot')),
   chartEmpty:    document.getElementById('chartEmpty'),
+  wealthCard:     document.getElementById('wealthCard'),
+  wealthTotal:    document.getElementById('wealthTotal'),
+  wealthBreakdown: document.getElementById('wealthBreakdown'),
 
   // FAB + diálogo de movimiento
   fabAdd:       document.getElementById('fabAdd'),
@@ -110,10 +125,19 @@ const el = {
   selectCategory:   document.getElementById('category'),
   inputMerchant:    document.getElementById('merchant'),
   merchantSuggestions: document.getElementById('merchantSuggestions'),
+  selectAccount:    document.getElementById('account'),
   inputPaymentCard: document.getElementById('paymentCard'),
   inputNote:        document.getElementById('note'),
   radioIncome:      document.getElementById('typeIncome'),
   radioExpense:     document.getElementById('typeExpense'),
+  radioTransfer:    document.getElementById('typeTransfer'),
+  merchantField:    document.getElementById('merchantField'),
+  accountField:     document.getElementById('accountField'),
+  categoryField:    document.getElementById('categoryField'),
+  recurringField:   document.getElementById('recurringField'),
+  transferFields:   document.getElementById('transferFields'),
+  selectFromAccount: document.getElementById('fromAccount'),
+  selectToAccount:   document.getElementById('toAccount'),
   recurringFreq:    document.getElementById('recurringFreq'),
   recurringEndsOn:  document.getElementById('recurringEndsOn'),
 
@@ -151,7 +175,34 @@ const el = {
   dlgHistory:      document.getElementById('dlgHistory'),
   historyCanvas:   document.getElementById('chartHistory'),
   btnOpenHistory:  document.getElementById('btnOpenHistory'),
-  btnCloseHistory: document.getElementById('btnCloseHistory')
+  btnCloseHistory: document.getElementById('btnCloseHistory'),
+
+  // Cuentas y saldos
+  btnAccounts: document.getElementById('btnAccounts'),
+  dlgAccounts: document.getElementById('dlgAccounts'),
+  accountsBalanceList: document.getElementById('accountsBalanceList'),
+  btnCloseAccounts: document.getElementById('btnCloseAccounts'),
+
+  // Patrimonio
+  dlgWealth: document.getElementById('dlgWealth'),
+  wealthDialogTotal: document.getElementById('wealthDialogTotal'),
+  wealthDistribution: document.getElementById('wealthDistribution'),
+  wealthChangeAmount: document.getElementById('wealthChangeAmount'),
+  wealthChangePct: document.getElementById('wealthChangePct'),
+  wealthHistoryCanvas: document.getElementById('chartWealthHistory'),
+  wealthAccountsList: document.getElementById('wealthAccountsList'),
+  btnCloseWealth: document.getElementById('btnCloseWealth'),
+  dlgAccountDetail: document.getElementById('dlgAccountDetail'),
+  accountDetailContent: document.getElementById('accountDetailContent'),
+  btnCloseAccountDetail: document.getElementById('btnCloseAccountDetail'),
+  dlgBalanceAdjustment: document.getElementById('dlgBalanceAdjustment'),
+  adjustAccountName: document.getElementById('adjustAccountName'),
+  adjustCurrentBalance: document.getElementById('adjustCurrentBalance'),
+  adjustRealBalance: document.getElementById('adjustRealBalance'),
+  adjustDifference: document.getElementById('adjustDifference'),
+  adjustNote: document.getElementById('adjustNote'),
+  btnCancelBalanceAdjustment: document.getElementById('btnCancelBalanceAdjustment'),
+  btnSaveBalanceAdjustment: document.getElementById('btnSaveBalanceAdjustment')
 };
 
 if (el.appVersion) {
@@ -267,10 +318,15 @@ function getVisibleMonthTxs() {
 
 // Construye la tarjeta HTML de un movimiento
 function renderTxCard(tx) {
-  const cat = CATEGORY_BY_ID[tx.categoryId] || {
-    name: 'Sin categoría',
-    emoji: tx.type === 'income' ? '➕' : '➖'
-  };
+  const isTransfer = tx.type === 'transfer';
+  const fromAccount = isTransfer ? state.accounts.find(a => a.id === tx.fromAccountId) : null;
+  const toAccount = isTransfer ? state.accounts.find(a => a.id === tx.toAccountId) : null;
+  const cat = isTransfer
+    ? { name: 'Transferencia', emoji: '↔️' }
+    : (CATEGORY_BY_ID[tx.categoryId] || {
+        name: 'Sin categoría',
+        emoji: tx.type === 'income' ? '➕' : '➖'
+      });
 
   const li = document.createElement('li');
   li.className = `tx ${tx.type}`;
@@ -285,7 +341,7 @@ function renderTxCard(tx) {
 
   const titleDiv = document.createElement('div');
   titleDiv.className = 'title';
-  titleDiv.textContent = tx.merchant || tx.note || cat.name;
+  titleDiv.textContent = isTransfer ? 'Transferencia' : (tx.merchant || tx.note || cat.name);
 
   const subDiv = document.createElement('div');
   subDiv.className = 'sub';
@@ -296,12 +352,18 @@ function renderTxCard(tx) {
 
 
   // categoría + fecha en la línea pequeña
-  const subParts = [
-  cat.name,
-  tx.paymentCard,
-  tx.merchant ? tx.note : '',
-  d.toLocaleDateString('es-ES')
-].filter(Boolean);
+  const subParts = isTransfer
+    ? [
+        `${fromAccount?.name || 'Cuenta'} → ${toAccount?.name || 'Cuenta'}`,
+        tx.note || '',
+        d.toLocaleDateString('es-ES')
+      ].filter(Boolean)
+    : [
+        cat.name,
+        tx.paymentCard,
+        tx.merchant ? tx.note : '',
+        d.toLocaleDateString('es-ES')
+      ].filter(Boolean);
 
 subDiv.textContent = subParts.join(' • ');
 
@@ -311,7 +373,7 @@ subDiv.textContent = subParts.join(' • ');
   const amountDiv = document.createElement('div');
   amountDiv.className = 'amount';
   amountDiv.textContent =
-    (tx.type === 'expense' ? '-' : '+') + ' ' + centsToEUR(tx.amountCents);
+    isTransfer ? centsToEUR(tx.amountCents) : ((tx.type === 'expense' ? '-' : '+') + ' ' + centsToEUR(tx.amountCents));
 
   const actionsDiv = document.createElement('div');
   actionsDiv.className = 'actions';
@@ -364,8 +426,8 @@ function refreshList() {
     if (tx.type === 'income') {
       // INGRESOS: solo suman al total de ingresos
       inc += amount;
-    } else {
-      // GASTOS: suman a gastos + donut
+    } else if (tx.type === 'expense') {
+      // GASTOS: suman a gastos + donut. Las transferencias quedan fuera.
       exp += amount;
       const catId = tx.categoryId || 'other_exp';
       byCategory[catId] = (byCategory[catId] || 0) + amount;
@@ -389,6 +451,8 @@ function refreshList() {
   // Donut 1: distribución de gastos
   // Donut 2: gastos sobre ingresos (con "Restante")
   renderDonutCharts(byCategory, inc, exp);
+
+  renderWealthCard();
 
   // Si el diálogo de histórico está abierto, lo refrescamos
   if (el.dlgHistory?.open) {
@@ -585,7 +649,7 @@ function buildHistorySeries(limitMonths = 8) {
   const buckets = new Map();
 
   for (const tx of state.txs) {
-    if (!tx.date) continue;
+    if (!tx.date || tx.type === 'transfer') continue;
     const d = new Date(tx.date + 'T00:00:00');
     if (Number.isNaN(d.getTime())) continue;
 
@@ -597,7 +661,7 @@ function buildHistorySeries(limitMonths = 8) {
     }
 
     if (tx.type === 'income') bucket.income += tx.amountCents || 0;
-    else bucket.expense += tx.amountCents || 0;
+    else if (tx.type === 'expense') bucket.expense += tx.amountCents || 0;
   }
 
   // Mes actual como límite superior
@@ -715,7 +779,7 @@ function renderHistoryChart() {
           callbacks: {
             label(ctx) {
               const v = ctx.parsed.y;
-              return `${ctx.dataset.label}: ${fmtEUR(Math.round(v * 100))}`;
+              return `${ctx.dataset.label}: ${centsToEUR(Math.round(v * 100))}`;
             }
           }
         }
@@ -731,14 +795,35 @@ function renderHistoryChart() {
 
 initCategoryOptions();
 
-if (el.radioIncome && el.radioExpense) {
-  const handleTypeChange = () => {
-    const txType = el.radioIncome.checked ? 'income' : 'expense';
-    initCategoryOptions(txType); // recarga categorías según el tipo
-  };
+function getSelectedTxType() {
+  if (el.radioTransfer?.checked) return 'transfer';
+  return el.radioIncome?.checked ? 'income' : 'expense';
+}
 
-  el.radioIncome.addEventListener('change', handleTypeChange);
-  el.radioExpense.addEventListener('change', handleTypeChange);
+function updateTransactionFormMode() {
+  const type = getSelectedTxType();
+  const isTransfer = type === 'transfer';
+
+  if (!isTransfer) initCategoryOptions(type);
+
+  if (el.merchantField) el.merchantField.hidden = isTransfer;
+  if (el.accountField) el.accountField.hidden = isTransfer;
+  if (el.categoryField) el.categoryField.hidden = isTransfer;
+  if (el.recurringField) el.recurringField.hidden = isTransfer;
+  if (el.transferFields) el.transferFields.hidden = !isTransfer;
+
+  if (el.selectCategory) el.selectCategory.required = !isTransfer;
+  if (el.selectAccount) el.selectAccount.required = !isTransfer;
+  if (el.selectFromAccount) el.selectFromAccount.required = isTransfer;
+  if (el.selectToAccount) el.selectToAccount.required = isTransfer;
+
+  if (isTransfer) renderTransferAccountOptions();
+}
+
+if (el.radioIncome && el.radioExpense) {
+  el.radioIncome.addEventListener('change', updateTransactionFormMode);
+  el.radioExpense.addEventListener('change', updateTransactionFormMode);
+  el.radioTransfer?.addEventListener('change', updateTransactionFormMode);
 }
 
 state.month = toMonthKey(new Date());
@@ -804,8 +889,345 @@ if (el.donutCarousel) {
 
 
 // =============================
+// 5.5 Cuentas y saldos
+// =============================
+
+function calculateAccountBalance(account) {
+  let balance = Number(account.initialBalanceCents) || 0;
+  const cutoff = account.initialBalanceDate || '';
+
+  for (const tx of state.txs) {
+    // initialBalanceCents representa el saldo REAL al cierre de cutoff.
+    // Por tanto solo aplicamos movimientos de días posteriores.
+    if (cutoff && tx.date <= cutoff) continue;
+
+    const amount = Number(tx.amountCents) || 0;
+    if (tx.type === 'transfer') {
+      if (tx.fromAccountId === account.id) balance -= amount;
+      if (tx.toAccountId === account.id) balance += amount;
+      continue;
+    }
+    if (tx.type === 'adjustment') {
+      if (tx.accountId === account.id) balance += amount;
+      continue;
+    }
+
+    if (tx.accountId !== account.id) continue;
+    if (tx.type === 'income') balance += amount;
+    else if (tx.type === 'expense') balance -= amount;
+  }
+  return balance;
+}
+
+function renderWealthCard() {
+  if (!el.wealthCard || !el.wealthTotal || !el.wealthBreakdown) return;
+
+  const accounts = getActiveAccounts();
+  const balances = accounts.map(account => ({
+    account,
+    balance: calculateAccountBalance(account)
+  }));
+  const total = balances.reduce((sum, item) => sum + item.balance, 0);
+
+  el.wealthTotal.textContent = centsToEUR(total);
+  el.wealthBreakdown.innerHTML = '';
+
+  for (const { account, balance } of balances) {
+    const item = document.createElement('div');
+    item.className = 'wealth-account';
+    const icon = account.type === 'cash' ? '💶' : '🏦';
+    item.innerHTML = `
+      <span class="wealth-account__name">${icon} ${account.name}</span>
+      <strong class="wealth-account__value">${centsToEUR(balance)}</strong>
+    `;
+    el.wealthBreakdown.appendChild(item);
+  }
+
+  el.wealthCard.classList.toggle('wealth-card--empty', balances.length === 0);
+}
+
+
+function calculateAccountBalanceAt(account, targetDate) {
+  let balance = Number(account.initialBalanceCents) || 0;
+  const cutoff = account.initialBalanceDate || '';
+  if (!cutoff || !targetDate || targetDate < cutoff) return null;
+
+  for (const tx of state.txs) {
+    if (!tx.date || tx.date <= cutoff || tx.date > targetDate) continue;
+    const amount = Number(tx.amountCents) || 0;
+    if (tx.type === 'transfer') {
+      if (tx.fromAccountId === account.id) balance -= amount;
+      if (tx.toAccountId === account.id) balance += amount;
+    } else if (tx.type === 'adjustment') {
+      if (tx.accountId === account.id) balance += amount;
+    } else if (tx.accountId === account.id) {
+      if (tx.type === 'income') balance += amount;
+      else if (tx.type === 'expense') balance -= amount;
+    }
+  }
+  return balance;
+}
+
+function buildWealthHistorySeries() {
+  const accounts = getActiveAccounts().filter(a => a.initialBalanceDate);
+  if (!accounts.length) return { labels: [], values: [] };
+  // Solo mostramos patrimonio total desde la fecha en la que TODAS las cuentas activas
+  // tienen un saldo de partida fiable.
+  const start = accounts.map(a => a.initialBalanceDate).sort().at(-1);
+  const end = todayISO();
+  if (!start || start > end) return { labels: [], values: [] };
+
+  const labels = [];
+  const values = [];
+  const d = new Date(start + 'T12:00:00');
+  const last = new Date(end + 'T12:00:00');
+  while (d <= last) {
+    const iso = d.toISOString().slice(0, 10);
+    let total = 0;
+    let valid = true;
+    for (const account of accounts) {
+      const value = calculateAccountBalanceAt(account, iso);
+      if (value == null) { valid = false; break; }
+      total += value;
+    }
+    if (valid) {
+      labels.push(iso);
+      values.push(total);
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return { labels, values };
+}
+
+function formatShortDate(iso) {
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}`;
+}
+
+function renderWealthDialog() {
+  if (!el.dlgWealth) return;
+  const balances = getActiveAccounts().map(account => ({ account, balance: calculateAccountBalance(account) }));
+  const total = balances.reduce((sum, x) => sum + x.balance, 0);
+  if (el.wealthDialogTotal) el.wealthDialogTotal.textContent = centsToEUR(total);
+
+  if (el.wealthDistribution) {
+    el.wealthDistribution.innerHTML = balances.map(({account,balance}) => {
+      const pct = total > 0 && balance > 0 ? (balance / total * 100) : 0;
+      const icon = account.type === 'cash' ? '💶' : '🏦';
+      return `<div class="wealth-dist-row"><div><strong>${icon} ${account.name}</strong><span>${centsToEUR(balance)}</span></div><strong>${pct.toFixed(1).replace('.', ',')}%</strong></div>`;
+    }).join('');
+  }
+
+  const series = buildWealthHistorySeries();
+  const first = series.values[0] ?? total;
+  const last = series.values.at(-1) ?? total;
+  const diff = last - first;
+  const pct = first !== 0 ? diff / Math.abs(first) * 100 : 0;
+  if (el.wealthChangeAmount) el.wealthChangeAmount.textContent = `${diff >= 0 ? '+' : ''}${centsToEUR(diff)}`;
+  if (el.wealthChangePct) el.wealthChangePct.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(1).replace('.', ',')} %`;
+
+  if (state.chartWealth) { state.chartWealth.destroy(); state.chartWealth = null; }
+  if (el.wealthHistoryCanvas && series.labels.length && window.Chart) {
+    state.chartWealth = new Chart(el.wealthHistoryCanvas, {
+      type: 'line',
+      data: { labels: series.labels.map(formatShortDate), datasets: [{ label: 'Patrimonio', data: series.values.map(v => v/100), tension: .3, fill: false }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => centsToEUR(Math.round(c.parsed.y*100)) } } }, scales: { x: { ticks: { maxTicksLimit: 6 } }, y: { ticks: { callback: v => `${v.toLocaleString('es-ES')} €` } } } }
+    });
+  }
+
+  if (el.wealthAccountsList) {
+    el.wealthAccountsList.innerHTML = '';
+    for (const {account,balance} of balances) {
+      const pct = total > 0 && balance > 0 ? balance/total*100 : 0;
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'wealth-account-row';
+      btn.innerHTML = `<span><strong>${account.type === 'cash' ? '💶' : '🏦'} ${account.name}</strong><small>${pct.toFixed(0)}% de tu dinero</small></span><span><strong>${centsToEUR(balance)}</strong><b>›</b></span>`;
+      btn.addEventListener('click', () => openAccountDetail(account.id));
+      el.wealthAccountsList.appendChild(btn);
+    }
+  }
+}
+
+function openAccountDetail(accountId) {
+  const account = state.accounts.find(a => a.id === accountId);
+  if (!account || !el.dlgAccountDetail || !el.accountDetailContent) return;
+  const balance = calculateAccountBalance(account);
+  const cutoff = account.initialBalanceDate || '';
+  let income=0, expense=0, transfers=0, adjustments=0;
+  const related = state.txs.filter(tx => {
+    if (!tx.date || (cutoff && tx.date <= cutoff)) return false;
+    if (tx.type === 'transfer') return tx.fromAccountId === account.id || tx.toAccountId === account.id;
+    return tx.accountId === account.id;
+  }).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  for (const tx of related) {
+    const amount=Number(tx.amountCents)||0;
+    if (tx.type==='income') income+=amount;
+    else if (tx.type==='expense') expense+=amount;
+    else if (tx.type==='transfer') transfers += tx.toAccountId===account.id ? amount : -amount;
+    else if (tx.type==='adjustment') adjustments += amount;
+  }
+  const recent = related.slice(0,8).map(tx => {
+    let label = tx.merchant || tx.note || (tx.type==='transfer' ? 'Transferencia' : tx.type==='adjustment' ? 'Ajuste de saldo' : tx.type==='income' ? 'Ingreso' : 'Gasto');
+    let sign = tx.type==='income' ? '+' : tx.type==='expense' ? '-' : tx.type==='adjustment' ? ((Number(tx.amountCents)||0)>=0 ? '+' : '') : (tx.toAccountId===account.id ? '+' : '-');
+    return `<div class="account-detail-tx"><span><strong>${label}</strong><small>${tx.date || ''}</small></span><strong>${sign}${centsToEUR(Number(tx.amountCents)||0)}</strong></div>`;
+  }).join('') || '<p class="sub">Sin movimientos posteriores al saldo inicial.</p>';
+  el.accountDetailContent.innerHTML = `<div class="account-detail-hero"><span>${account.type==='cash'?'💶':'🏦'} ${account.name}</span><strong>${centsToEUR(balance)}</strong><small>Saldo actual</small></div><h4>Desde el inicio</h4><div class="account-detail-stats"><div><span>Ingresos</span><strong>${income === 0 ? centsToEUR(0) : `+${centsToEUR(income)}`}</strong></div><div><span>Gastos</span><strong>${expense === 0 ? centsToEUR(0) : `-${centsToEUR(expense)}`}</strong></div><div><span>Transferencias</span><strong>${transfers === 0 ? centsToEUR(0) : `${transfers > 0 ? '+' : ''}${centsToEUR(transfers)}`}</strong></div><div><span>Ajustes</span><strong>${adjustments === 0 ? centsToEUR(0) : `${adjustments > 0 ? '+' : ''}${centsToEUR(adjustments)}`}</strong></div></div><button type="button" class="account-adjust-btn" id="btnAdjustAccountBalance"><span class="account-adjust-icon" aria-hidden="true">⚖</span><span>Ajustar saldo</span></button><h4>Movimientos recientes</h4>${recent}`;
+  el.dlgAccountDetail.showModal();
+  document.getElementById('btnAdjustAccountBalance')?.addEventListener('click', () => openBalanceAdjustmentDialog(account.id));
+}
+
+async function saveBalanceAdjustment(accountId, realBalanceCents, note = '') {
+  const account = state.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('Cuenta no encontrada');
+  const current = calculateAccountBalance(account);
+  const difference = realBalanceCents - current;
+  if (difference === 0) return false;
+  await saveTransaction({
+    type: 'adjustment', amountCents: difference, category: null,
+    date: todayISO(), merchant: '', accountId,
+    fromAccountId: null, toAccountId: null, paymentCard: '',
+    note: note || 'Ajuste de saldo', source: 'manual',
+    recurringFreq: '', recurringEndsOn: ''
+  }, null);
+  return true;
+}
+
+function openBalanceAdjustmentDialog(accountId) {
+  const account = state.accounts.find(a => a.id === accountId);
+  if (!account || !el.dlgBalanceAdjustment) return;
+  const current = calculateAccountBalance(account);
+  el.dlgBalanceAdjustment.dataset.accountId = accountId;
+  if (el.adjustAccountName) el.adjustAccountName.textContent = `${account.type==='cash'?'💶':'🏦'} ${account.name}`;
+  if (el.adjustCurrentBalance) el.adjustCurrentBalance.textContent = centsToEUR(current);
+  if (el.adjustRealBalance) el.adjustRealBalance.value = (current / 100).toFixed(2).replace('.', ',');
+  if (el.adjustDifference) el.adjustDifference.textContent = centsToEUR(0);
+  if (el.adjustNote) el.adjustNote.value = '';
+  el.dlgBalanceAdjustment.showModal();
+}
+
+function refreshAdjustmentDifference() {
+  const account = state.accounts.find(a => a.id === el.dlgBalanceAdjustment?.dataset.accountId);
+  if (!account || !el.adjustDifference) return;
+  const real = parseAmountToCents(el.adjustRealBalance?.value || '');
+  if (Number.isNaN(real)) { el.adjustDifference.textContent = '—'; return; }
+  const diff = real - calculateAccountBalance(account);
+  el.adjustDifference.textContent = `${diff > 0 ? '+' : ''}${centsToEUR(diff)}`;
+}
+
+function openWealthDialog() {
+  if (el.toolbarMenu) el.toolbarMenu.classList.remove('open');
+  renderWealthDialog();
+  el.dlgWealth?.showModal();
+}
+
+function renderAccountsBalanceDialog() {
+  if (!el.accountsBalanceList) return;
+  el.accountsBalanceList.innerHTML = '';
+
+  for (const account of getActiveAccounts()) {
+    const card = document.createElement('section');
+    card.className = 'account-balance-card';
+    const icon = account.type === 'cash' ? '💶' : '🏦';
+    const current = calculateAccountBalance(account);
+
+    card.innerHTML = `
+      <div class="account-balance-head">
+        <div><strong>${icon} ${account.name}</strong><span>Saldo actual calculado</span></div>
+        <strong class="account-current">${centsToEUR(current)}</strong>
+      </div>
+      <label class="field">
+        <span>Saldo real al cierre (€)</span>
+        <input class="account-opening" type="text" inputmode="decimal" value="${(Number(account.initialBalanceCents || 0) / 100).toFixed(2).replace('.', ',')}">
+      </label>
+      <label class="field">
+        <span>Fecha de cierre</span>
+        <input class="account-date" type="date" value="${account.initialBalanceDate || todayISO()}">
+      </label>
+      <button type="button" class="account-save">Guardar saldo</button>
+    `;
+
+    card.querySelector('.account-save').addEventListener('click', async () => {
+      const amountInput = card.querySelector('.account-opening');
+      const dateInput = card.querySelector('.account-date');
+      const cents = parseAmountToCents(amountInput.value);
+      if (!Number.isFinite(cents)) { alert('Introduce un saldo válido.'); return; }
+      if (!dateInput.value) { alert('Selecciona una fecha de cierre.'); return; }
+
+      showSplash();
+      try {
+        await updateAccountOpeningBalance(account.id, cents, dateInput.value);
+      } catch (err) {
+        console.error(err);
+        alert('Error guardando el saldo: ' + (err?.message || err));
+      } finally {
+        hideSplash();
+      }
+    });
+
+    el.accountsBalanceList.appendChild(card);
+  }
+}
+
+// =============================
 // 6. Diálogo de alta / edición
 // =============================
+
+function getActiveAccounts() {
+  return state.accounts.filter(account => !account.archived);
+}
+
+function renderAccountOptions({ selectedId = null, allowUnassigned = false } = {}) {
+  if (!el.selectAccount) return;
+
+  const accounts = getActiveAccounts();
+  el.selectAccount.innerHTML = '';
+
+  if (allowUnassigned) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Sin asignar';
+    el.selectAccount.appendChild(option);
+  }
+
+  for (const account of accounts) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = `${account.type === 'cash' ? '💶' : '🏦'} ${account.name}`;
+    el.selectAccount.appendChild(option);
+  }
+
+  if (selectedId && accounts.some(account => account.id === selectedId)) {
+    el.selectAccount.value = selectedId;
+  } else if (allowUnassigned && !selectedId) {
+    el.selectAccount.value = '';
+  } else if (accounts.some(account => account.id === DEFAULT_ACCOUNT_IDS.MAIN)) {
+    el.selectAccount.value = DEFAULT_ACCOUNT_IDS.MAIN;
+  } else if (accounts.length) {
+    el.selectAccount.value = accounts[0].id;
+  }
+
+  el.selectAccount.disabled = accounts.length === 0;
+}
+
+function renderTransferAccountOptions({ fromId = null, toId = null } = {}) {
+  const accounts = getActiveAccounts();
+  const fill = (select, selectedId) => {
+    if (!select) return;
+    select.innerHTML = '';
+    for (const account of accounts) {
+      const option = document.createElement('option');
+      option.value = account.id;
+      option.textContent = `${account.type === 'cash' ? '💶' : '🏦'} ${account.name}`;
+      select.appendChild(option);
+    }
+    if (selectedId && accounts.some(a => a.id === selectedId)) select.value = selectedId;
+  };
+
+  fill(el.selectFromAccount, fromId || DEFAULT_ACCOUNT_IDS.CASH);
+  const defaultTo = toId || (accounts.some(a => a.id === DEFAULT_ACCOUNT_IDS.MAIN) ? DEFAULT_ACCOUNT_IDS.MAIN : accounts.find(a => a.id !== el.selectFromAccount?.value)?.id);
+  fill(el.selectToAccount, defaultTo);
+}
 
 function resetFormForNew() {
   el.form.reset();
@@ -818,14 +1240,19 @@ function resetFormForNew() {
     el.inputPaymentCard.value = '';
   }
 
+  renderAccountOptions({ selectedId: DEFAULT_ACCOUNT_IDS.MAIN });
+
   if (el.btnCancelTx) {
     el.btnCancelTx.textContent = 'Cancelar';
   }
 
   el.radioIncome.checked = true;
   el.radioExpense.checked = false;
+  if (el.radioTransfer) el.radioTransfer.checked = false;
 
   initCategoryOptions('income');
+  renderTransferAccountOptions();
+  updateTransactionFormMode();
 
   el.inputDate.value = todayISO();
   el.recurringFreq.value = '';
@@ -867,16 +1294,21 @@ function setDefaultRecurringEndIfNeeded() {
 
 function openEditDialog(tx) {
   el.form.reset();
-  if (tx.type === 'income') el.radioIncome.checked = true;
-  else el.radioExpense.checked = true;
+  el.radioIncome.checked = tx.type === 'income';
+  el.radioExpense.checked = tx.type === 'expense';
+  if (el.radioTransfer) el.radioTransfer.checked = tx.type === 'transfer';
 
-  initCategoryOptions(tx.type);
+  if (tx.type !== 'transfer') initCategoryOptions(tx.type);
+  renderTransferAccountOptions({ fromId: tx.fromAccountId || null, toId: tx.toAccountId || null });
+  updateTransactionFormMode();
 
   el.inputAmount.value = (tx.amountCents / 100).toString().replace('.', ',');
   el.inputDate.value = tx.date || todayISO();
 
 
-  el.selectCategory.value = tx.categoryId || (tx.type === 'income' ? 'other_inc' : 'other_exp');
+  if (tx.type !== 'transfer') {
+    el.selectCategory.value = tx.categoryId || (tx.type === 'income' ? 'other_inc' : 'other_exp');
+  }
   el.inputNote.value = tx.note || '';
 
   if (el.inputMerchant) {
@@ -885,6 +1317,13 @@ function openEditDialog(tx) {
 
 if (el.inputPaymentCard) {
   el.inputPaymentCard.value = tx.paymentCard || '';
+}
+
+if (tx.type !== 'transfer') {
+  renderAccountOptions({
+    selectedId: tx.accountId || null,
+    allowUnassigned: !tx.accountId
+  });
 }
 
   if (tx.recurring && tx.recurring.freq) {
@@ -972,11 +1411,11 @@ el.form?.addEventListener('submit', async (e) => {
     return;
   }
 
-  const type = raw.type === 'income' ? 'income' : 'expense';
+  const type = raw.type === 'transfer' ? 'transfer' : (raw.type === 'income' ? 'income' : 'expense');
 
   // --- lógica de recurrentes ---
-  let recurringFreq = raw.recurringFreq || '';
-  let recurringEndsOn = (raw.recurringEndsOn || '').trim();
+  let recurringFreq = type === 'transfer' ? '' : (raw.recurringFreq || '');
+  let recurringEndsOn = type === 'transfer' ? '' : (raw.recurringEndsOn || '').trim();
 
   // Si es mensual y no han indicado fecha fin, poner por defecto 1 año después
   if (recurringFreq === 'monthly' && !recurringEndsOn) {
@@ -994,25 +1433,40 @@ el.form?.addEventListener('submit', async (e) => {
   }
 
   const payload = {
-  type,
-  amountCents,
-  category: raw.category || (
-    type === 'income' ? 'other_inc' : 'other_exp'
-  ),
-  date: raw.date,
-  merchant: raw.merchant?.trim() || '',
-  paymentCard: raw.paymentCard?.trim() || '',
-  note: raw.note?.trim() || '',
-  source: el.dlgTx.dataset.source || 'manual',
-  recurringFreq,
-  recurringEndsOn
-};
+    type,
+    amountCents,
+    category: type === 'transfer' ? null : (raw.category || (type === 'income' ? 'other_inc' : 'other_exp')),
+    date: raw.date,
+    merchant: type === 'transfer' ? '' : (raw.merchant?.trim() || ''),
+    accountId: type === 'transfer' ? null : (raw.accountId || null),
+    fromAccountId: type === 'transfer' ? (raw.fromAccountId || null) : null,
+    toAccountId: type === 'transfer' ? (raw.toAccountId || null) : null,
+    paymentCard: type === 'transfer' ? '' : (raw.paymentCard?.trim() || ''),
+    note: raw.note?.trim() || '',
+    source: el.dlgTx.dataset.source || 'manual',
+    recurringFreq,
+    recurringEndsOn
+  };
   if (!isTransactionsReady()) {
     alert('Firebase aún no está listo. Espera un momento y reintenta.');
     return;
   }
 
   const editingId = el.dlgTx.dataset.editingId || null;
+
+  if (type === 'transfer') {
+    if (!payload.fromAccountId || !payload.toAccountId) {
+      alert('Selecciona la cuenta de origen y la de destino.');
+      return;
+    }
+    if (payload.fromAccountId === payload.toAccountId) {
+      alert('La cuenta de origen y la de destino deben ser distintas.');
+      return;
+    }
+  } else if (!editingId && !payload.accountId) {
+    alert('Selecciona una cuenta para el movimiento.');
+    return;
+  }
 
   // 1️⃣ Cerrar el diálogo ANTES de empezar el guardado
   el.dlgTx.close();
@@ -1052,6 +1506,21 @@ document.addEventListener('firebase-ready', async () => {
       state.txs = txList;
       refreshList();
     });
+
+    await initAccountsListener((accountList) => {
+      state.accounts = accountList;
+
+      // Mantiene sincronizado el selector si las cuentas cambian.
+      if (!el.dlgTx?.open) {
+        renderAccountOptions({ selectedId: DEFAULT_ACCOUNT_IDS.MAIN });
+        renderTransferAccountOptions();
+      }
+      renderWealthCard();
+      if (el.dlgAccounts?.open) renderAccountsBalanceDialog();
+      if (el.dlgWealth?.open) renderWealthDialog();
+    });
+
+    await ensureDefaultAccounts(todayISO());
 
     hideSplash();
 
@@ -1113,17 +1582,20 @@ el.fileImport?.addEventListener('change', async (e) => {
       promises.push(
         saveTransaction(
           {
-  type: item.type === 'income' ? 'income' : 'expense',
+  type: item.type === 'transfer' ? 'transfer' : (item.type === 'income' ? 'income' : 'expense'),
   amountCents: item.amountCents,
-  category:
-    item.categoryId ||
-    (item.type === 'income' ? 'other_inc' : 'other_exp'),
+  category: item.type === 'transfer' ? null : (
+    item.categoryId || (item.type === 'income' ? 'other_inc' : 'other_exp')
+  ),
   date:
     typeof item.date === 'string'
       ? item.date.slice(0, 10)
       : todayISO(),
-  merchant: item.merchant || '',
-  paymentCard: item.paymentCard || '',
+  merchant: item.type === 'transfer' ? '' : (item.merchant || ''),
+  accountId: item.type === 'transfer' ? null : (item.accountId || null),
+  fromAccountId: item.type === 'transfer' ? (item.fromAccountId || null) : null,
+  toAccountId: item.type === 'transfer' ? (item.toAccountId || null) : null,
+  paymentCard: item.type === 'transfer' ? '' : (item.paymentCard || ''),
   note: item.note || '',
   source: item.source || 'import',
   recurringFreq: '',
@@ -1147,13 +1619,19 @@ el.fileImport?.addEventListener('change', async (e) => {
 
 function exportCSV() {
   const rows = [
-    ['Fecha','Tipo','Categoría','Descripción','Importe']
+    ['Fecha','Tipo','Cuenta','Desde','Hacia','Categoría','Descripción','Importe']
   ];
 
   state.txs.forEach(t => {
+    const accountName = state.accounts.find(a => a.id === t.accountId)?.name || '';
+    const fromName = state.accounts.find(a => a.id === t.fromAccountId)?.name || '';
+    const toName = state.accounts.find(a => a.id === t.toAccountId)?.name || '';
     rows.push([
       t.date,
       t.type,
+      accountName,
+      fromName,
+      toName,
       CATEGORY_BY_ID[t.categoryId]?.name || '',
       t.note || '',
       (t.amountCents / 100).toFixed(2)
@@ -1457,7 +1935,9 @@ function openShortcutExpenseDialog(expense) {
   el.inputAmount.value = expense.amount;
   el.inputDate.value = expense.date;
   el.inputMerchant.value = expense.merchant;
-  el.inputPaymentCard.value = expense.paymentCard;
+  if (el.inputPaymentCard) {
+    el.inputPaymentCard.value = expense.paymentCard || '';
+  }
   el.inputNote.value = '';
 
   const suggestedCategory =
@@ -2037,6 +2517,36 @@ el.ocrImport?.addEventListener('click', async () => {
 // =============================
 // 11. Diálogo de histórico
 // =============================
+
+function openAccountsDialog() {
+  if (el.toolbarMenu) el.toolbarMenu.classList.remove('open');
+  renderAccountsBalanceDialog();
+  el.dlgAccounts?.showModal();
+}
+
+el.btnAccounts?.addEventListener('click', openAccountsDialog);
+el.wealthCard?.addEventListener('click', openWealthDialog);
+el.btnCloseWealth?.addEventListener('click', () => el.dlgWealth?.close());
+el.adjustRealBalance?.addEventListener('input', refreshAdjustmentDifference);
+el.btnCancelBalanceAdjustment?.addEventListener('click', () => el.dlgBalanceAdjustment?.close());
+el.btnSaveBalanceAdjustment?.addEventListener('click', async () => {
+  const accountId = el.dlgBalanceAdjustment?.dataset.accountId;
+  const real = parseAmountToCents(el.adjustRealBalance?.value || '');
+  if (!accountId || Number.isNaN(real)) { alert('Introduce un saldo real válido.'); return; }
+  try {
+    const changed = await saveBalanceAdjustment(accountId, real, el.adjustNote?.value.trim() || '');
+    el.dlgBalanceAdjustment?.close();
+    if (!changed) { alert('El saldo ya coincide con Cashly.'); return; }
+    // El listener de Firestore refrescará los saldos; cerramos el detalle para evitar mostrar datos antiguos.
+    el.dlgAccountDetail?.close();
+  } catch (err) { console.error(err); alert('Error ajustando saldo: ' + (err?.message || err)); }
+});
+
+el.btnCloseAccountDetail?.addEventListener('click', () => el.dlgAccountDetail?.close());
+
+el.btnCloseAccounts?.addEventListener('click', () => {
+  el.dlgAccounts?.close();
+});
 
 el.btnOpenHistory?.addEventListener('click', () => {
   if (!el.dlgHistory) return;

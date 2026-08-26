@@ -78,6 +78,11 @@
       <span>Histórico de meses</span>
     </button>
 
+    <button type="button" id="btnAccounts" class="toolbar-menu__item">
+      <span class="toolbar-menu__icon">🏦</span>
+      <span>Cuentas y saldos</span>
+    </button>
+
     <hr />
 
     <button id="btnLogout" type="button">
@@ -96,6 +101,17 @@
       <span id="currentMonth">—</span>
       <button id="nextMonth" aria-label="Mes siguiente">›</button>
     </div>
+    <button type="button" id="wealthCard" class="wealth-card" aria-label="Abrir patrimonio">
+      <div class="wealth-card__top">
+        <div>
+          <div class="wealth-card__eyebrow">TU DINERO</div>
+          <div id="wealthTotal" class="wealth-card__total">—</div>
+        </div>
+        <span class="wealth-card__arrow" aria-hidden="true">›</span>
+      </div>
+      <div id="wealthBreakdown" class="wealth-card__breakdown"></div>
+    </button>
+
     <div class="cards">
       <div class="card">
         <div class="card-title">Ingresos</div>
@@ -186,6 +202,62 @@
 </dialog>
 
 
+
+
+<!-- Diálogo de patrimonio -->
+<dialog id="dlgWealth" class="sheet wealth-sheet">
+  <div class="wealth-view">
+    <div class="wealth-view__hero">
+      <span class="wealth-view__eyebrow">PATRIMONIO</span>
+      <strong id="wealthDialogTotal">—</strong>
+      <small>Total disponible</small>
+    </div>
+    <section class="wealth-panel">
+      <h4>Distribución</h4>
+      <div id="wealthDistribution"></div>
+    </section>
+    <section class="wealth-panel">
+      <h4>Evolución del patrimonio</h4>
+      <div class="wealth-history-chart"><canvas id="chartWealthHistory"></canvas></div>
+      <div class="wealth-change"><div><span>Desde el inicio</span><strong id="wealthChangeAmount">—</strong></div><div><span>Variación</span><strong id="wealthChangePct">—</strong></div></div>
+    </section>
+    <section class="wealth-panel">
+      <h4>Tus cuentas</h4>
+      <div id="wealthAccountsList"></div>
+    </section>
+    <menu><button type="button" id="btnCloseWealth">Cerrar</button></menu>
+  </div>
+</dialog>
+
+<dialog id="dlgAccountDetail" class="sheet wealth-sheet">
+  <div id="accountDetailContent"></div>
+  <menu><button type="button" id="btnCloseAccountDetail">Cerrar</button></menu>
+</dialog>
+
+
+<dialog id="dlgBalanceAdjustment" class="sheet adjustment-sheet">
+  <h3>Ajustar saldo</h3>
+  <p class="sub" id="adjustAccountName"></p>
+  <div class="adjustment-summary"><span>Saldo según Cashly</span><strong id="adjustCurrentBalance">0,00 €</strong></div>
+  <label class="field"><span>Saldo real (€)</span><input id="adjustRealBalance" type="text" inputmode="decimal" autocomplete="off"></label>
+  <div class="adjustment-summary"><span>Diferencia</span><strong id="adjustDifference">0,00 €</strong></div>
+  <label class="field"><span>Nota (opcional)</span><input id="adjustNote" type="text" placeholder="Ej. Recuento de efectivo"></label>
+  <p class="sub">El ajuste corrige el saldo y el patrimonio, pero no cuenta como ingreso ni como gasto.</p>
+  <menu><button type="button" id="btnCancelBalanceAdjustment">Cancelar</button><button type="button" id="btnSaveBalanceAdjustment" class="primary">Ajustar saldo</button></menu>
+</dialog>
+
+<!-- Diálogo de cuentas y saldos -->
+<dialog id="dlgAccounts" class="sheet accounts-sheet">
+  <form method="dialog" id="accountsForm">
+    <h3>Cuentas y saldos</h3>
+    <p class="sub accounts-help">Indica el saldo real de cada cuenta al cierre de una fecha. Cashly sumará los ingresos y restará los gastos posteriores a esa fecha.</p>
+    <div id="accountsBalanceList"></div>
+    <menu>
+      <button type="button" id="btnCloseAccounts">Cerrar</button>
+    </menu>
+  </form>
+</dialog>
+
 <!-- Diálogo OCR -->
 <dialog id="dlgOcr" class="sheet">
   <h3>Importar desde imágenes</h3>
@@ -206,6 +278,8 @@
       <label for="typeIncome">Ingreso</label>
       <input type="radio" id="typeExpense" name="type" value="expense">
       <label for="typeExpense">Gasto</label>
+      <input type="radio" id="typeTransfer" name="type" value="transfer">
+      <label for="typeTransfer">Transferencia</label>
     </div>
 
     <label class="field">
@@ -213,7 +287,7 @@
       <input type="text" id="amount" name="amount" required inputmode="decimal" placeholder="0,00">
     </label>
 
-    <label class="field">
+    <label class="field" id="merchantField">
   <span>Comercio</span>
 
   <input
@@ -232,18 +306,29 @@
   </div>
 </label>
 
-<label class="field">
-  <span>Tarjeta</span>
-  <input
-    type="text"
-    id="paymentCard"
-    name="paymentCard"
-    maxlength="80"
-    placeholder="Por ejemplo, Visa"
-  >
+<label class="field" id="accountField">
+  <span>Cuenta</span>
+  <select id="account" name="accountId" required>
+    <option value="">Cargando cuentas…</option>
+  </select>
 </label>
 
-    <label class="field">
+<div id="transferFields" hidden>
+  <label class="field">
+    <span>Desde</span>
+    <select id="fromAccount" name="fromAccountId"></select>
+  </label>
+  <label class="field">
+    <span>Hacia</span>
+    <select id="toAccount" name="toAccountId"></select>
+  </label>
+  <div class="transfer-hint">El total de “Tu dinero” no cambia: solo mueves dinero entre cuentas.</div>
+</div>
+
+<!-- Compatibilidad con movimientos/atajos antiguos que todavía guardan paymentCard. -->
+<input type="hidden" id="paymentCard" name="paymentCard" value="">
+
+    <label class="field" id="categoryField">
       <span>Categoría</span>
       <select id="category" name="category" required></select>
     </label>    
@@ -260,7 +345,7 @@
       <input type="text" id="note" name="note" maxlength="120" placeholder="Opcional">
     </label>
 
-    <details class="field">
+    <details class="field" id="recurringField">
       <summary>Repetición (opcional)</summary>
       <label class="subfield">
         <span>Frecuencia</span>

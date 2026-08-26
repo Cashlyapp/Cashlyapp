@@ -33,11 +33,14 @@ function normalizeMerchantKey(value) {
 /**
  * @typedef {Object} InternalTx
  * @property {string} id
- * @property {'income'|'expense'} type
+ * @property {'income'|'expense'|'transfer'|'adjustment'} type
  * @property {number} amountCents
  * @property {string} categoryId
  * @property {string} date
  * @property {string} [merchant]
+ * @property {string|null} [accountId]
+ * @property {string|null} [fromAccountId]
+ * @property {string|null} [toAccountId]
  * @property {string} [paymentCard]
  * @property {string} [note]
  * @property {'manual'|'apple_pay'|'ocr'|'import'} [source]
@@ -147,16 +150,21 @@ export async function saveTransaction(formData, editingId) {
     runTransaction
   } = _fs;
 
+  const isTransfer = formData.type === 'transfer';
+  const isAdjustment = formData.type === 'adjustment';
   const baseTx = {
     type: formData.type,
     amountCents: formData.amountCents,
-    categoryId: formData.category,
+    categoryId: (isTransfer || isAdjustment) ? null : formData.category,
     date: formData.date,
-    merchant: formData.merchant || '',
-    paymentCard: formData.paymentCard || '',
+    merchant: (isTransfer || isAdjustment) ? '' : (formData.merchant || ''),
+    accountId: isTransfer ? null : (formData.accountId ?? null),
+    fromAccountId: isTransfer ? (formData.fromAccountId ?? null) : null,
+    toAccountId: isTransfer ? (formData.toAccountId ?? null) : null,
+    paymentCard: (isTransfer || isAdjustment) ? '' : (formData.paymentCard || ''),
     note: formData.note || '',
     source: formData.source || 'manual',
-    recurring: formData.recurringFreq
+    recurring: !isTransfer && !isAdjustment && formData.recurringFreq
       ? {
           freq: formData.recurringFreq,
           endsOn: formData.recurringEndsOn || null
@@ -204,6 +212,7 @@ export async function saveTransaction(formData, editingId) {
         baseTx.categoryId !== newDefaultCategory;
 
       const canLearnMerchant =
+        baseTx.type !== 'transfer' &&
         wasUncategorized &&
         hasNewCategory &&
         merchantKey;
@@ -234,12 +243,20 @@ export async function saveTransaction(formData, editingId) {
         }
       }
 
+      const accountIdForUpdate =
+        formData.accountId === undefined
+          ? (currentTx.accountId ?? null)
+          : baseTx.accountId;
+
       transaction.update(txRef, {
         type: baseTx.type,
         amountCents: baseTx.amountCents,
         categoryId: baseTx.categoryId,
         date: baseTx.date,
         merchant: baseTx.merchant,
+        accountId: accountIdForUpdate,
+        fromAccountId: baseTx.fromAccountId,
+        toAccountId: baseTx.toAccountId,
         paymentCard: baseTx.paymentCard,
         note: baseTx.note,
         source: baseTx.source,
@@ -257,6 +274,9 @@ export async function saveTransaction(formData, editingId) {
   categoryId: baseTx.categoryId,
   date: baseTx.date,
   merchant: baseTx.merchant,
+  accountId: baseTx.accountId,
+  fromAccountId: baseTx.fromAccountId,
+  toAccountId: baseTx.toAccountId,
   paymentCard: baseTx.paymentCard,
   note: baseTx.note,
   source: baseTx.source,
@@ -321,6 +341,9 @@ export async function saveTransaction(formData, editingId) {
   categoryId: baseTx.categoryId,
   date: futureDate,
   merchant: baseTx.merchant || '',
+  accountId: baseTx.accountId,
+  fromAccountId: null,
+  toAccountId: null,
   paymentCard: baseTx.paymentCard || '',
   note: baseTx.note || '',
   source: baseTx.source || 'manual',
