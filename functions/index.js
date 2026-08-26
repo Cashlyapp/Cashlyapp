@@ -651,21 +651,91 @@ function detectTransactionType(normalizedText, rules) {
  * @return {number|null}
  */
 function extractAmountCents(text) {
-  const match = text.match(/(\d+[.,]?\d{0,2})/);
+  const numericMatch = text.match(/(\d+[.,]?\d{0,2})/);
 
-  if (!match) {
-    return null;
+  if (numericMatch) {
+    const value = Number(
+        numericMatch[1].replace(",", "."),
+    );
+
+    if (!Number.isNaN(value)) {
+      return Math.round(value * 100);
+    }
   }
 
-  const value = Number(
-      match[1].replace(",", "."),
+  /*
+   * El dictado de iOS puede escribir "un euro" en lugar de "1 euro".
+   * Soportamos importes sencillos escritos con palabras en español.
+   */
+  const normalized = normalizeSearchText(text);
+
+  const units = {
+    un: 1,
+    uno: 1,
+    una: 1,
+    dos: 2,
+    tres: 3,
+    cuatro: 4,
+    cinco: 5,
+    seis: 6,
+    siete: 7,
+    ocho: 8,
+    nueve: 9,
+    diez: 10,
+    once: 11,
+    doce: 12,
+    trece: 13,
+    catorce: 14,
+    quince: 15,
+    dieciseis: 16,
+    diecisiete: 17,
+    dieciocho: 18,
+    diecinueve: 19,
+    veinte: 20,
+    veintiuno: 21,
+    veintidos: 22,
+    veintitres: 23,
+    veinticuatro: 24,
+    veinticinco: 25,
+    veintiseis: 26,
+    veintisiete: 27,
+    veintiocho: 28,
+    veintinueve: 29,
+  };
+
+  const tens = {
+    treinta: 30,
+    cuarenta: 40,
+    cincuenta: 50,
+    sesenta: 60,
+    setenta: 70,
+    ochenta: 80,
+    noventa: 90,
+  };
+
+  const currencyMatch = normalized.match(
+      /\b([a-z]+(?:\s+y\s+[a-z]+)?)\s+(?:euro|euros|eur)\b/,
   );
 
-  if (Number.isNaN(value)) {
+  if (!currencyMatch) {
     return null;
   }
 
-  return Math.round(value * 100);
+  const words = currencyMatch[1].split(/\s+/);
+  let value = 0;
+
+  if (words.length === 1) {
+    value = units[words[0]] || tens[words[0]] || 0;
+  } else if (
+    words.length === 3 &&
+    words[1] === "y" &&
+    tens[words[0]] &&
+    units[words[2]]
+  ) {
+    value = tens[words[0]] + units[words[2]];
+  }
+
+  return value > 0 ? value * 100 : null;
 }
 
 /**
@@ -772,6 +842,15 @@ function extractMerchant(text, type, rules) {
 
   merchant = merchant
       .replace(trailingAmountRegex, "")
+      .trim();
+
+
+  /*
+   * Las expresiones usadas para indicar la cuenta no forman parte
+   * del nombre del comercio.
+   */
+  merchant = merchant
+      .replace(/\s+(?:en\s+)?(?:efectivo|met[aá]lico|cash)\s*$/i, "")
       .trim();
 
   return merchant || null;
@@ -1023,6 +1102,9 @@ exports.addTransaction = onRequest(
         const userId = normalizeText(cashlyUserUid.value());
         const merchant = normalizeText(body.merchant);
         const paymentCard = normalizeText(body.paymentCard);
+        const accountId =
+          normalizeText(body.accountId) ||
+          "main-bank";
         const type = normalizeText(body.type) || "expense";
         const categoryId = normalizeText(body.categoryId);
         const note = normalizeText(body.note);
@@ -1091,6 +1173,7 @@ exports.addTransaction = onRequest(
           categoryId: finalCategoryId,
           date,
           merchant,
+          accountId,
           paymentCard,
           note,
           source: type === "expense" ?
@@ -1240,6 +1323,17 @@ exports.addVoiceTransaction = onRequest(
         const paymentCard =
           normalizeText(body.paymentCard);
 
+        const explicitAccountId =
+          normalizeText(body.accountId);
+
+        const mentionsCash =
+          /\b(efectivo|met[aá]lico|cash)\b/i
+              .test(text);
+
+        const accountId =
+          explicitAccountId ||
+          (mentionsCash ? "cash" : "main-bank");
+
         const note =
           normalizeText(body.note);
 
@@ -1280,6 +1374,7 @@ exports.addVoiceTransaction = onRequest(
           date,
           merchant:
             parsedTransaction.merchant,
+          accountId,
           paymentCard,
           note,
           source: "voice_shortcut",
@@ -1303,6 +1398,7 @@ exports.addVoiceTransaction = onRequest(
             merchant:
               parsedTransaction.merchant,
             categoryId: finalCategoryId,
+            accountId,
             date,
           },
         });
