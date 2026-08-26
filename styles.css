@@ -1047,3 +1047,9 @@ main{
 .ocr-account-field{margin:14px 0 10px}
 .ocr-account-field small{display:block;margin-top:6px;color:var(--muted);font-size:11px;line-height:1.35}
 .toolbar-menu{min-width:250px}
+
+/* R7.1 — acciones del diálogo de movimiento */
+#txForm menu{display:flex;align-items:center;gap:8px}
+#txForm menu .menu-spacer{flex:1}
+#btnDeleteTx.danger{border-color:rgba(239,68,68,.45);color:#fca5a5}
+#btnDeleteTx.danger:hover{background:rgba(239,68,68,.10)}

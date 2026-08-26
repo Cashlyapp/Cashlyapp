@@ -30,6 +30,15 @@ import {
   DEFAULT_ACCOUNT_IDS
 } from './accounts-service.js';
 
+import { state, APP_VERSION } from './app/state.js';
+import { el } from './app/dom.js';
+import { initBackup } from './features/backup.js';
+import { getShortcutExpenseFromUrl } from './features/shortcuts.js';
+import {
+  suggestExpenseCategory,
+  initMerchantSuggestions
+} from './features/merchants.js';
+
 // ===== SPLASH CONTROL =====
 function hideSplash() {
   const sp = document.getElementById('splash');
@@ -64,150 +73,6 @@ function showSplash() {
 // =============================
 // 2. Estado global y referencias DOM
 // =============================
-
-/** @type {{
- *   month: string,
- *   txs: InternalTx[],
- *   accounts: any[],
- *   chartExpenses: any,
- *   chartIncome: any,
- *   activeChartIndex: number,
- *   chartHistory: any
- * }} */
-const state = {
-  month: toMonthKey(new Date()),
-  txs: [],
-  accounts: [],
-  chartExpenses: null,
-  chartIncome: null,
-  activeChartIndex: 0,
-  chartHistory: null,
-  statsCategoryChart: null,
-  statsHistoryChart: null,
-  wealthPageChart: null
-};
-
-window.__state = state;
-
-const APP_VERSION = 'v1.6.2';
-
-const el = {
-  // Cabecera / toolbar
-  monthLabel:   document.getElementById('currentMonth'),
-  btnPrevMonth: document.getElementById('prevMonth'),
-  btnNextMonth: document.getElementById('nextMonth'),
-  btnMenu:      document.getElementById('btnMenu'),
-  toolbarMenu:  document.getElementById('toolbarMenu'),
-
-  // Resumen + lista
-  txList:         document.getElementById('txList'),
-  emptyState:     document.getElementById('emptyState') || document.querySelector('.empty'),
-  totalsIncome:   document.getElementById('incomeTotal'),
-  totalsExpense:  document.getElementById('expenseTotal'),
-  totalsBalance:  document.getElementById('balance'),
-  donutCarousel:  document.getElementById('chartCarousel'),
-  donutExpenses:  document.getElementById('chartDonutExpenses'),
-  donutIncome:    document.getElementById('chartDonutIncome'),
-  donutDots:      Array.from(document.querySelectorAll('.chart-dots .dot')),
-  chartEmpty:    document.getElementById('chartEmpty'),
-  wealthCard:     document.getElementById('wealthCard'),
-  wealthTotal:    document.getElementById('wealthTotal'),
-  wealthBreakdown: document.getElementById('wealthBreakdown'),
-
-  // FAB + diálogo de movimiento
-  fabAdd:       document.getElementById('fabAdd'),
-  dlgTx:        document.getElementById('dlgTx'),
-  form:         document.getElementById('txForm'),
-  dlgTitle:     document.getElementById('dlgTitle'),
-  btnDeleteTx:  document.getElementById('btnDeleteTx'), // si no existe será null, no pasa nada si usas ?.addEventListener
-  btnCancelTx:  document.getElementById('btnCancelTx'),
-
-  // Campos del formulario
-  inputAmount:      document.getElementById('amount'),
-  inputDate:        document.getElementById('date'),
-  selectCategory:   document.getElementById('category'),
-  inputMerchant:    document.getElementById('merchant'),
-  merchantSuggestions: document.getElementById('merchantSuggestions'),
-  selectAccount:    document.getElementById('account'),
-  inputPaymentCard: document.getElementById('paymentCard'),
-  inputNote:        document.getElementById('note'),
-  radioIncome:      document.getElementById('typeIncome'),
-  radioExpense:     document.getElementById('typeExpense'),
-  radioTransfer:    document.getElementById('typeTransfer'),
-  merchantField:    document.getElementById('merchantField'),
-  accountField:     document.getElementById('accountField'),
-  categoryField:    document.getElementById('categoryField'),
-  recurringField:   document.getElementById('recurringField'),
-  transferFields:   document.getElementById('transferFields'),
-  selectFromAccount: document.getElementById('fromAccount'),
-  selectToAccount:   document.getElementById('toAccount'),
-  recurringFreq:    document.getElementById('recurringFreq'),
-  recurringEndsOn:  document.getElementById('recurringEndsOn'),
-
-  // Export / import JSON
-  btnExport:      document.getElementById('btnExport'),
-  btnExportCSV:   document.getElementById('btnExportCSV'),
-  fileImport:     document.getElementById('fileImport'),
-
-  // OCR
-  btnOcr:       document.getElementById('btnOcr'),
-  ocrFiles:     document.getElementById('ocrFiles'),
-  dlgOcr:       document.getElementById('dlgOcr'),
-  ocrStatus:    document.getElementById('ocrStatus'),
-  ocrPreview:   document.getElementById('ocrPreview'),
-  ocrImport:    document.getElementById('ocrImport'),
-  ocrCancel:    document.getElementById('ocrCancel'),
-  ocrAccount:   document.getElementById('ocrAccount'),
-
-  // Auth
-  authDialog:   document.getElementById('authDialog'),
-  authForm:     document.getElementById('authForm'),
-  authEmail:    document.getElementById('authEmail'),
-  authPassword: document.getElementById('authPassword'),
-  authSubmit:   document.getElementById('authSubmit'),
-  authCancel:   document.getElementById('authCancel'),
-  toggleMode:   document.getElementById('toggleMode'),
-  authInfo:     document.getElementById('authInfo'),
-  appVersion:   document.getElementById('appVersion'),
-
-  // Diálogo borrar
-  dlgConfirmDelete: document.getElementById('dlgConfirm'),
-  btnConfirmDelete: document.getElementById('btnYes'),
-  btnCancelDelete:  document.getElementById('btnNo'),
-
-  // Histórico
-  dlgHistory:      document.getElementById('dlgHistory'),
-  historyCanvas:   document.getElementById('chartHistory'),
-  btnOpenHistory:  document.getElementById('btnOpenHistory'),
-  btnCloseHistory: document.getElementById('btnCloseHistory'),
-
-  // Cuentas y saldos
-  btnAccounts: document.getElementById('btnAccounts'),
-  dlgAccounts: document.getElementById('dlgAccounts'),
-  accountsBalanceList: document.getElementById('accountsBalanceList'),
-  btnCloseAccounts: document.getElementById('btnCloseAccounts'),
-
-  // Patrimonio
-  dlgWealth: document.getElementById('dlgWealth'),
-  wealthDialogTotal: document.getElementById('wealthDialogTotal'),
-  wealthDistribution: document.getElementById('wealthDistribution'),
-  wealthChangeAmount: document.getElementById('wealthChangeAmount'),
-  wealthChangePct: document.getElementById('wealthChangePct'),
-  wealthHistoryCanvas: document.getElementById('chartWealthHistory'),
-  wealthAccountsList: document.getElementById('wealthAccountsList'),
-  btnCloseWealth: document.getElementById('btnCloseWealth'),
-  dlgAccountDetail: document.getElementById('dlgAccountDetail'),
-  accountDetailContent: document.getElementById('accountDetailContent'),
-  btnCloseAccountDetail: document.getElementById('btnCloseAccountDetail'),
-  dlgBalanceAdjustment: document.getElementById('dlgBalanceAdjustment'),
-  adjustAccountName: document.getElementById('adjustAccountName'),
-  adjustCurrentBalance: document.getElementById('adjustCurrentBalance'),
-  adjustRealBalance: document.getElementById('adjustRealBalance'),
-  adjustDifference: document.getElementById('adjustDifference'),
-  adjustNote: document.getElementById('adjustNote'),
-  btnCancelBalanceAdjustment: document.getElementById('btnCancelBalanceAdjustment'),
-  btnSaveBalanceAdjustment: document.getElementById('btnSaveBalanceAdjustment')
-};
 
 if (el.appVersion) {
   el.appVersion.textContent = APP_VERSION;
@@ -1733,7 +1598,7 @@ window.addEventListener('DOMContentLoaded', initR4Statistics);
 // 7. Integración con Firebase
 // =============================
 
-const pendingShortcutExpense = getShortcutExpenseFromUrl();
+const pendingShortcutExpense = getShortcutExpenseFromUrl(todayISO);
 
 document.addEventListener('firebase-ready', async () => {
   const { user } = window.__firebase || {};
@@ -1784,386 +1649,18 @@ document.addEventListener('firebase-ready', async () => {
 
 
 // =============================
-// 8. Exportar / importar JSON
+// 8. Copias de seguridad / CSV
 // =============================
-
-// Exporta TODAS las transacciones que tenemos en memoria (no sólo el mes)
-el.btnExport?.addEventListener('click', () => {
-  const data = JSON.stringify(state.txs, null, 2);
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `cashly-${todayISO()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+initBackup({
+  state,
+  el,
+  saveTransaction,
+  isTransactionsReady,
+  todayISO,
+  CATEGORY_BY_ID
 });
 
-el.btnExportCSV?.addEventListener('click', () => { exportCSV(); });
-
-// Importar JSON (se insertan como nuevos docs)
-el.fileImport?.addEventListener('change', async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  try {
-    const text = await file.text();
-    const json = JSON.parse(text);
-    if (!Array.isArray(json)) {
-      alert('El JSON debe ser un array de transacciones');
-      return;
-    }
-
-        if (!isTransactionsReady()) {
-      alert('Firebase aún no está listo');
-      return;
-    }
-
-    const promises = [];
-    for (const item of json) {
-      if (!item.type || !item.amountCents || !item.date) continue;
-      promises.push(
-        saveTransaction(
-          {
-  type: item.type === 'transfer' ? 'transfer' : (item.type === 'income' ? 'income' : 'expense'),
-  amountCents: item.amountCents,
-  category: item.type === 'transfer' ? null : (
-    item.categoryId || (item.type === 'income' ? 'other_inc' : 'other_exp')
-  ),
-  date:
-    typeof item.date === 'string'
-      ? item.date.slice(0, 10)
-      : todayISO(),
-  merchant: item.type === 'transfer' ? '' : (item.merchant || ''),
-  accountId: item.type === 'transfer' ? null : (item.accountId || null),
-  fromAccountId: item.type === 'transfer' ? (item.fromAccountId || null) : null,
-  toAccountId: item.type === 'transfer' ? (item.toAccountId || null) : null,
-  paymentCard: item.type === 'transfer' ? '' : (item.paymentCard || ''),
-  note: item.note || '',
-  source: item.source || 'import',
-  recurringFreq: '',
-  recurringEndsOn: ''
-},
-          null
-        )
-      );
-    }
-
-
-    await Promise.all(promises);
-    alert(`Importadas ${promises.length} transacciones`);
-  } catch (err) {
-    console.error(err);
-    alert('Error al importar JSON: ' + (err?.message || err));
-  } finally {
-    e.target.value = '';
-  }
-});
-
-function exportCSV() {
-  const rows = [
-    ['Fecha','Tipo','Cuenta','Desde','Hacia','Categoría','Descripción','Importe']
-  ];
-
-  state.txs.forEach(t => {
-    const accountName = state.accounts.find(a => a.id === t.accountId)?.name || '';
-    const fromName = state.accounts.find(a => a.id === t.fromAccountId)?.name || '';
-    const toName = state.accounts.find(a => a.id === t.toAccountId)?.name || '';
-    rows.push([
-      t.date,
-      t.type,
-      accountName,
-      fromName,
-      toName,
-      CATEGORY_BY_ID[t.categoryId]?.name || '',
-      t.note || '',
-      (t.amountCents / 100).toFixed(2)
-    ]);
-  });
-
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], { type:'text/csv' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'cashly_movimientos.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function normalizeShortcutAmount(value) {
-  return String(value || '')
-    .replace(/EUR/gi, '')
-    .replace(/€/g, '')
-    .replace(/\s+/g, '')
-    .trim();
-}
-
-function getShortcutExpenseFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-
-  if (params.get('newExpense') !== '1') {
-    return null;
-  }
-
-  const amount = normalizeShortcutAmount(
-  params.get('amount')
-);
-  const merchant = (params.get('merchant') || '').trim();
-  const paymentCard = (params.get('card') || '').trim();
-  const date = (params.get('date') || '').trim();
-
-  return {
-    amount: amount.slice(0, 30),
-    merchant: merchant.slice(0, 120),
-    paymentCard: paymentCard.slice(0, 80),
-    date: /^\d{4}-\d{2}-\d{2}$/.test(date)
-      ? date
-      : todayISO()
-  };
-}
-
-function normalizeMerchantName(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
-function suggestExpenseCategory(merchant) {
-  const normalized = normalizeMerchantName(merchant);
-
-  const mappings = [
-    {
-      category: 'groceries',
-      words: [
-        'mercadona',
-        'carrefour',
-        'lidl',
-        'aldi',
-        'eroski',
-        'alcampo',
-        'supermercado'
-      ]
-    },
-    {
-      category: 'restaurants',
-      words: [
-        'restaurante',
-        'restaurant',
-        'cafeteria',
-        'cafe',
-        'mcdonald',
-        'burger king',
-        'telepizza',
-        'glovo',
-        'uber eats',
-        'just eat'
-      ]
-    },
-    {
-      category: 'transport',
-      words: [
-        'repsol',
-        'cepsa',
-        'shell',
-        'renfe',
-        'iryo',
-        'ouigo',
-        'uber',
-        'cabify',
-        'parking'
-      ]
-    },
-    {
-      category: 'shopping',
-      words: [
-        'amazon',
-        'zara',
-        'pull&bear',
-        'bershka',
-        'primark',
-        'ikea',
-        'decathlon',
-        'mediamarkt'
-      ]
-    },
-    {
-      category: 'subscriptions',
-      words: [
-        'netflix',
-        'spotify',
-        'apple.com/bill',
-        'amazon prime',
-        'youtube',
-        'disney'
-      ]
-    }
-  ];
-
-  const match = mappings.find(group =>
-    group.words.some(word => normalized.includes(word))
-  );
-
-  return match?.category || 'other_exp';
-}
-
-function getMerchantSuggestions(searchText, maxResults = 6) {
-  const search = normalizeMerchantName(searchText);
-
-  if (search.length < 2) {
-    return [];
-  }
-
-  const merchants = new Map();
-
-  for (const tx of state.txs) {
-    const currentType =
-      el.radioIncome.checked ? 'income' : 'expense';
-
-    if (tx.type !== currentType) continue;
-
-    const merchant = String(tx.merchant || '').trim();
-    if (!merchant) continue;
-
-    const normalizedMerchant = normalizeMerchantName(merchant);
-
-    if (!normalizedMerchant.includes(search)) continue;
-
-    const existing = merchants.get(normalizedMerchant);
-
-    if (existing) {
-      existing.count += 1;
-
-      // Conservamos la categoría más reciente encontrada.
-      if (tx.categoryId) {
-        existing.categoryId = tx.categoryId;
-      }
-    } else {
-      merchants.set(normalizedMerchant, {
-        merchant,
-        categoryId:
-          tx.categoryId ||
-          (tx.type === 'income' ? 'other_inc' : 'other_exp'),
-        count: 1
-      });
-    }
-  }
-
-  return Array.from(merchants.values())
-    .sort((a, b) => {
-      const aStarts = normalizeMerchantName(a.merchant).startsWith(search);
-      const bStarts = normalizeMerchantName(b.merchant).startsWith(search);
-
-      if (aStarts !== bStarts) {
-        return aStarts ? -1 : 1;
-      }
-
-      return b.count - a.count;
-    })
-    .slice(0, maxResults);
-}
-
-function hideMerchantSuggestions() {
-  if (!el.merchantSuggestions) return;
-
-  el.merchantSuggestions.hidden = true;
-  el.merchantSuggestions.innerHTML = '';
-}
-
-function renderMerchantSuggestions() {
-  if (
-    !el.inputMerchant ||
-    !el.merchantSuggestions
-  ) {
-    hideMerchantSuggestions();
-    return;
-  }
-
-  const suggestions = getMerchantSuggestions(
-    el.inputMerchant.value
-  );
-
-  el.merchantSuggestions.innerHTML = '';
-
-  if (!suggestions.length) {
-    hideMerchantSuggestions();
-    return;
-  }
-
-  for (const suggestion of suggestions) {
-    const button = document.createElement('button');
-
-    button.type = 'button';
-    button.className = 'merchant-suggestion';
-
-    const category =
-      CATEGORY_BY_ID[suggestion.categoryId];
-
-    button.innerHTML = `
-      <span>${suggestion.merchant}</span>
-      <small>
-        ${category?.emoji || ''} ${category?.name || ''}
-      </small>
-    `;
-
-    button.addEventListener('mousedown', event => {
-      event.preventDefault();
-    });
-
-    button.addEventListener('click', () => {
-      el.inputMerchant.value = suggestion.merchant;
-
-      const categoryExists = Array.from(
-        el.selectCategory.options
-      ).some(option =>
-        option.value === suggestion.categoryId
-      );
-
-      if (categoryExists) {
-        el.selectCategory.value =
-          suggestion.categoryId;
-      }
-
-      hideMerchantSuggestions();
-      el.selectCategory.focus();
-    });
-
-    el.merchantSuggestions.appendChild(button);
-  }
-
-  el.merchantSuggestions.hidden = false;
-}
-
-window.getMerchantSuggestions = getMerchantSuggestions;
-window.renderMerchantSuggestions = renderMerchantSuggestions;
-
-el.inputMerchant?.addEventListener('input', () => {
-  renderMerchantSuggestions();
-});
-
-el.inputMerchant?.addEventListener('blur', () => {
-  setTimeout(() => {
-    hideMerchantSuggestions();
-  }, 100);
-
-  applyMerchantCategorySuggestion();
-});
-
-el.inputMerchant?.addEventListener(
-  'keydown',
-  event => {
-    if (event.key !== 'Enter') return;
-
-    event.preventDefault();
-
-    applyMerchantCategorySuggestion();
-    hideMerchantSuggestions();
-    el.selectCategory?.focus();
-  }
-);
+// Sugerencias y autocategorización de comercios viven en features/merchants.js.
 
 function openShortcutExpenseDialog(expense) {
   if (!expense || !el.dlgTx || !el.form) return;
@@ -2668,6 +2165,13 @@ function applyMerchantCategorySuggestion() {
     el.selectCategory.value = 'other_exp';
   }
 }
+
+initMerchantSuggestions({
+  state,
+  el,
+  CATEGORY_BY_ID,
+  onBlurCategorySuggestion: applyMerchantCategorySuggestion
+});
 
 el.ocrFiles?.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files || []);
